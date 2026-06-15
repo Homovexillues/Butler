@@ -1,0 +1,9 @@
+*.exe
+/bin/
+/tmp/
+.idea/
+.vscode/
+.claude/
+CLAUDE.md
+DEVELOPMENT.md
+Notifications.json
