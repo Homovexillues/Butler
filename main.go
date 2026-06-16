@@ -3,18 +3,13 @@ package main
 import (
 	"log"
 
-	"butler/internal/notify"
+	"butler/internal/cli"
 
 	"github.com/6tail/lunar-go/calendar"
 )
 
 func main() {
-	notifier := notify.SystemNotifier{}
-	message := notify.Message{
-		Title: "Notify",
-		Body:  "记得下班打卡",
-	}
-	notifier.Send(message)
+	cli.Execute()
 }
 
 func lunar() {

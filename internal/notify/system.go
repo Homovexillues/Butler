@@ -1,6 +1,10 @@
 package notify
 
-import "github.com/gen2brain/beeep"
+import (
+	"fmt"
+
+	"github.com/gen2brain/beeep"
+)
 
 type SystemNotifier struct{}
 
@@ -11,7 +15,7 @@ func (sys SystemNotifier) Name() string {
 func (sys SystemNotifier) Send(message Message) error {
 	err := beeep.Notify("Notify", message.Body, "")
 	if err != nil {
-		return err
+		return fmt.Errorf("system notify error: %w", err)
 	}
 	return nil
 }
