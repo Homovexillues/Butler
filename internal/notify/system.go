@@ -13,7 +13,11 @@ func (sys SystemNotifier) Name() string {
 }
 
 func (sys SystemNotifier) Send(message Message) error {
-	err := beeep.Notify("Notify", message.Body, "")
+	err := beeep.Beep(400, 500)
+	if err != nil {
+		return fmt.Errorf("system notify error: %w", err)
+	}
+	err = beeep.Notify("Notify", message.Body, "")
 	if err != nil {
 		return fmt.Errorf("system notify error: %w", err)
 	}
