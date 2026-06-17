@@ -17,7 +17,7 @@ func Run(ctx context.Context, nodes []*model.Node, notifier notify.Notifier) {
 		var target *model.Node
 		// find the sonnest node to notify
 		for _, node := range nodes {
-			next, ok := node.Schedule.Next(now)
+			next, ok := node.Schedule.NextAfter(now)
 			if !ok {
 				continue
 			}
