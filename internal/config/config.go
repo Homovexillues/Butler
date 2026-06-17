@@ -4,12 +4,21 @@ package config
 import (
 	"os"
 	"path/filepath"
+
+	"butler/internal/model"
+	"butler/internal/parser"
 )
 
 type Config struct {
-	PlanPath   string
-	ConfigPath string
+	Email EmailSettings
+	Mqtt  MqttSettings
 }
+
+type MqttSettings struct {
+	Broker string
+	Topic  string
+}
+type EmailSettings struct{}
 
 const (
 	EveryoneReadAndOwnerWrite      = 0o644
@@ -17,29 +26,56 @@ const (
 	OwnerAllAndEveryoneReadExecute = 0o755
 )
 
-func Load() (Config, error) {
-	config := Config{}
-	configDir, err := os.UserConfigDir()
-	configDir = filepath.Join(configDir, "butler")
-	if err != nil {
-		return Config{}, err
-	}
-	err = os.MkdirAll(configDir, OwnerAllAndEveryoneReadExecute)
-	if err != nil {
-		return Config{}, err
-	}
-	config.PlanPath = filepath.Join(configDir, "plan.jsonc")
-	config.ConfigPath = filepath.Join(configDir, "config.jsonc")
+var (
+	PlanPath   string
+	ConfigPath string
+)
 
-	err = ensureFile(config.PlanPath, EveryoneReadAndOwnerWrite)
+func LoadConfig() (Config, error) {
+	configDir, err := ensureDirectory()
 	if err != nil {
 		return Config{}, err
 	}
-	err = ensureFile(config.ConfigPath, OwnerReadAndWrite)
+	ConfigPath = filepath.Join(configDir, "config.jsonc")
+	err = ensureFile(ConfigPath, OwnerReadAndWrite)
+	if err != nil {
+		return Config{}, err
+	}
+	config, err := parser.Parse[Config](ConfigPath)
 	if err != nil {
 		return Config{}, err
 	}
 	return config, nil
+}
+
+func ensureDirectory() (string, error) {
+	configDir, err := os.UserConfigDir()
+	if err != nil {
+		return "", err
+	}
+	configDir = filepath.Join(configDir, "butler")
+	err = os.MkdirAll(configDir, OwnerAllAndEveryoneReadExecute)
+	if err != nil {
+		return "", err
+	}
+	return configDir, nil
+}
+
+func LoadPlan() ([]*model.Node, error) {
+	configDir, err := ensureDirectory()
+	if err != nil {
+		return []*model.Node{}, err
+	}
+	PlanPath = filepath.Join(configDir, "plan.jsonc")
+	err = ensureFile(PlanPath, EveryoneReadAndOwnerWrite)
+	if err != nil {
+		return []*model.Node{}, err
+	}
+	nodes, err := parser.Parse[[]*model.Node](PlanPath)
+	if err != nil {
+		return []*model.Node{}, err
+	}
+	return nodes, nil
 }
 
 func ensureFile(path string, fileMode os.FileMode) error {

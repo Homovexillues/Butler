@@ -9,7 +9,7 @@ import (
 	"butler/internal/notify"
 )
 
-func Run(ctx context.Context, nodes []*model.Node, notifier notify.Notifier) {
+func Run(ctx context.Context, registry *notify.Registry, nodes []*model.Node) {
 	maxTick := 1 * time.Minute
 	for {
 		now := time.Now()
@@ -34,7 +34,8 @@ func Run(ctx context.Context, nodes []*model.Node, notifier notify.Notifier) {
 		timer := time.NewTimer(duration)
 		select {
 		case <-timer.C:
-			_ = notifier.Send(notify.Message{Title: target.Title, Body: target.Title})
+			message := notify.Message{Title: target.Title, Body: target.Title}
+			notify.Broadcast(ctx, registry, target.Channels, message)
 		case <-ctx.Done():
 			timer.Stop()
 			return

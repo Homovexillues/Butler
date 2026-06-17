@@ -8,4 +8,5 @@ import (
 type Node struct {
 	Title    string
 	Schedule schedule.Schedule
+	Channels []string
 }
