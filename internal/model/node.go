@@ -7,6 +7,7 @@ import (
 
 type Node struct {
 	Title    string
+	Body     string
 	Schedule schedule.Schedule
 	Channels []string
 }

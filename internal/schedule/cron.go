@@ -6,19 +6,19 @@ import (
 	"github.com/robfig/cron/v3"
 )
 
-type CronSchedule struct {
+type Cron struct {
 	inner cron.Schedule
 }
 
-func NewCronSchedule(spec string) (CronSchedule, error) {
+func NewCronSchedule(spec string) (Cron, error) {
 	inner, err := cron.ParseStandard(spec)
 	if err != nil {
-		return CronSchedule{}, err
+		return Cron{}, err
 	}
-	return CronSchedule{inner: inner}, nil
+	return Cron{inner: inner}, nil
 }
 
-func (cronSchedule CronSchedule) NextAfter(since time.Time) (time.Time, bool) {
+func (cronSchedule Cron) NextAfter(since time.Time) (time.Time, bool) {
 	next := cronSchedule.inner.Next(since)
 	if next.IsZero() {
 		return time.Time{}, false

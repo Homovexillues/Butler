@@ -18,7 +18,14 @@ type MqttSettings struct {
 	Broker string
 	Topic  string
 }
-type EmailSettings struct{}
+type EmailSettings struct {
+	Host     string
+	Port     int
+	Username string
+	Authcode string
+	From     string
+	To       []string
+}
 
 const (
 	EveryoneReadAndOwnerWrite      = 0o644
@@ -26,22 +33,17 @@ const (
 	OwnerAllAndEveryoneReadExecute = 0o755
 )
 
-var (
-	PlanPath   string
-	ConfigPath string
-)
-
 func LoadConfig() (Config, error) {
 	configDir, err := ensureDirectory()
 	if err != nil {
 		return Config{}, err
 	}
-	ConfigPath = filepath.Join(configDir, "config.jsonc")
-	err = ensureFile(ConfigPath, OwnerReadAndWrite)
+	configPath := filepath.Join(configDir, "config.jsonc")
+	err = ensureFile(configPath, OwnerReadAndWrite)
 	if err != nil {
 		return Config{}, err
 	}
-	config, err := parser.Parse[Config](ConfigPath)
+	config, err := parser.Parse[Config](configPath)
 	if err != nil {
 		return Config{}, err
 	}
@@ -66,12 +68,12 @@ func LoadPlan() ([]*model.Node, error) {
 	if err != nil {
 		return []*model.Node{}, err
 	}
-	PlanPath = filepath.Join(configDir, "plan.jsonc")
-	err = ensureFile(PlanPath, EveryoneReadAndOwnerWrite)
+	planPath := filepath.Join(configDir, "plan.jsonc")
+	err = ensureFile(planPath, EveryoneReadAndOwnerWrite)
 	if err != nil {
 		return []*model.Node{}, err
 	}
-	nodes, err := parser.Parse[[]*model.Node](PlanPath)
+	nodes, err := parser.Parse[[]*model.Node](planPath)
 	if err != nil {
 		return []*model.Node{}, err
 	}
@@ -82,7 +84,6 @@ func ensureFile(path string, fileMode os.FileMode) error {
 	// os.O_CREATE: 如果文件不存在则创建
 	// os.O_EXCL: 与 O_CREATE 一起使用，文件必须不存在，否则返回错误
 	// os.O_RDONLY: 以只读方式打开
-	// 0666 读写权限，竟然这里用魔术数字，他妈的
 	_, err := os.OpenFile(path, os.O_RDONLY|os.O_CREATE|os.O_EXCL, fileMode)
 	if err != nil {
 		// 是文件存在类型的错误

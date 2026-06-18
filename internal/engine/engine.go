@@ -34,8 +34,12 @@ func Run(ctx context.Context, registry *notify.Registry, nodes []*model.Node) {
 		timer := time.NewTimer(duration)
 		select {
 		case <-timer.C:
-			message := notify.Message{Title: target.Title, Body: target.Title}
-			notify.Broadcast(ctx, registry, target.Channels, message)
+			// todo: 用发送标志而非时序判断发送
+			// 这是个临时做法，正确做法其实是在node上打标，不过现在MVP就先这么做着
+			if !time.Now().Before(soonest) {
+				message := notify.Message{Title: target.Title, Body: target.Body}
+				notify.Broadcast(ctx, registry, target.Channels, message)
+			}
 		case <-ctx.Done():
 			timer.Stop()
 			return
