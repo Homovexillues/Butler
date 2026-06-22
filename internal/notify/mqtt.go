@@ -19,7 +19,7 @@ const (
 	connectionTimeout = 3 * time.Second
 )
 
-func NewMqttNotifier(broker string, topic string) (mqttNotifier, error) {
+func NewMqttNotifier(broker string, topic string) (Notifier, error) {
 	opts := mqtt.NewClientOptions().
 		AddBroker(broker)
 	client := mqtt.NewClient(opts)

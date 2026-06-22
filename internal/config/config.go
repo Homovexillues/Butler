@@ -10,21 +10,21 @@ import (
 )
 
 type Config struct {
-	Email EmailSettings
-	Mqtt  MqttSettings
+	Email EmailSettings `json:"email"`
+	Mqtt  MqttSettings  `json:"mqtt"`
 }
 
 type MqttSettings struct {
-	Broker string
-	Topic  string
+	Broker string `json:"broker"`
+	Topic  string `json:"topic"`
 }
 type EmailSettings struct {
-	Host     string
-	Port     int
-	Username string
-	Authcode string
-	From     string
-	To       []string
+	Host     string   `json:"host"`
+	Port     int      `json:"port"`
+	Username string   `json:"username"`
+	Authcode string   `json:"authcode"`
+	From     string   `json:"from"`
+	To       []string `json:"to"`
 }
 
 const (

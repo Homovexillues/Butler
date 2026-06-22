@@ -17,7 +17,7 @@ type emailNotifier struct {
 	to       []string
 }
 
-func NewEmailNotifier(host string, port int, username string, authcode string, from string, to []string) (emailNotifier, error) {
+func NewEmailNotifier(host string, port int, username string, authcode string, from string, to []string) (Notifier, error) {
 	if host == "" || port == 0 || username == "" || authcode == "" || from == "" || len(to) == 0 {
 		return emailNotifier{}, errors.New("invalid argument")
 	}
@@ -47,8 +47,9 @@ func (email emailNotifier) Send(ctx context.Context, message Message) error {
 	msg.Subject(message.Title)
 	msg.SetBodyString(mail.TypeTextPlain, message.Body)
 	client, err := mail.NewClient(email.host,
+		mail.WithSSL(),
 		mail.WithPort(email.port),
-		mail.WithSMTPAuth(mail.SMTPAuthPlain),
+		mail.WithSMTPAuth(mail.SMTPAuthLogin),
 		mail.WithUsername(email.username),
 		mail.WithPassword(email.authcode))
 	if err != nil {
