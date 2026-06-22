@@ -39,9 +39,20 @@ func planToSchedule(planNode PlanNode) (schedule.Schedule, error) {
 		once := schedule.Once{At: t}
 		return once, nil
 	case planNode.Lunar != "":
-		fallthrough
+		t, err := time.Parse("01-02 15:04:05", planNode.Lunar)
+		if err != nil {
+			return nil, err
+		}
+		lunar := schedule.LunarSchedule{
+			Month:  int(t.Month()),
+			Day:    t.Day(),
+			Hour:   t.Hour(),
+			Minute: t.Minute(),
+			Second: t.Second(),
+		}
+		return lunar, nil
 	case planNode.Solar != "":
-		t, err := time.Parse("2006-01-02 15:04:05", planNode.Solar)
+		t, err := time.Parse("01-02 15:04:05", planNode.Solar)
 		if err != nil {
 			return nil, err
 		}
@@ -83,8 +94,11 @@ func walk(planNode PlanNode, inherited []string, out *[]*model.Node) error {
 	if len(planNode.Children) > 0 {
 		for _, pNode := range planNode.Children {
 			err := walk(pNode, channels, out)
-			return err
+			if err != nil {
+				return err
+			}
 		}
+		return nil
 	}
 
 	schedule, err := planToSchedule(planNode)
@@ -94,7 +108,7 @@ func walk(planNode PlanNode, inherited []string, out *[]*model.Node) error {
 	node := model.Node{
 		Title:    planNode.Title,
 		Body:     planNode.Body,
-		Channels: planNode.Channels,
+		Channels: channels,
 		Schedule: schedule,
 	}
 	*out = append(*out, &node)

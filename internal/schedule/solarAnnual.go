@@ -7,14 +7,14 @@ type SolarAnnual struct {
 }
 
 func (solarAnnual SolarAnnual) NextAfter(since time.Time) (time.Time, bool) {
-	nextTime := makeDate(solarAnnual, since.Year())
+	nextTime := makeSolarDate(solarAnnual, since.Year())
 	if !nextTime.After(since) {
-		nextTime = makeDate(solarAnnual, since.Year()+1)
+		nextTime = makeSolarDate(solarAnnual, since.Year()+1)
 	}
 	return nextTime, true
 }
 
-func makeDate(solarAnnual SolarAnnual, year int) time.Time {
+func makeSolarDate(solarAnnual SolarAnnual, year int) time.Time {
 	nextTime := time.Date(year, time.Month(solarAnnual.Month), solarAnnual.Day, solarAnnual.Hour, solarAnnual.Minute, solarAnnual.Second, 0, time.Local)
 	if nextTime.Month() != time.Month(solarAnnual.Month) {
 		nextTime = nextTime.AddDate(0, 0, -1)
