@@ -12,6 +12,8 @@ func buildRegistry(config config.Config) *notify.Registry {
 
 	registry.Register(notify.SystemNotifier{})
 
+	registry.Register(notify.MessageboxNotifier{})
+
 	mqttConfig := config.Mqtt
 	mqttNotifier, err := notify.NewMqttNotifier(mqttConfig.Broker, mqttConfig.Topic)
 	if err != nil {

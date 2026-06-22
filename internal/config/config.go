@@ -73,7 +73,11 @@ func LoadPlan() ([]*model.Node, error) {
 	if err != nil {
 		return []*model.Node{}, err
 	}
-	nodes, err := parser.Parse[[]*model.Node](planPath)
+	plan, err := parser.Parse[parser.Plan](planPath)
+	if err != nil {
+		return []*model.Node{}, err
+	}
+	nodes, err := parser.PlanToNodes(plan)
 	if err != nil {
 		return []*model.Node{}, err
 	}
