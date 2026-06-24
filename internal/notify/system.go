@@ -18,7 +18,7 @@ func (sys SystemNotifier) Send(ctx context.Context, message Message) error {
 	if err != nil {
 		return fmt.Errorf("system notify error: %w", err)
 	}
-	err = beeep.Notify("Notify", message.Body, "")
+	err = beeep.Notify(message.Title, message.Body, "")
 	if err != nil {
 		return fmt.Errorf("system notify error: %w", err)
 	}

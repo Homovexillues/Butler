@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"strconv"
+	"strings"
 	"time"
 
 	"butler/internal/model"
@@ -30,6 +32,8 @@ func planToSchedule(planNode PlanNode) (schedule.Schedule, error) {
 	if planNode.Title == "" && planNode.Body == "" {
 		return nil, fmt.Errorf("title and body can not both be empty")
 	}
+	var result schedule.Schedule
+
 	switch {
 	case planNode.Once != "":
 		t, err := time.ParseInLocation("2006-01-02 15:04:05", planNode.Once, time.Local)
@@ -37,7 +41,8 @@ func planToSchedule(planNode PlanNode) (schedule.Schedule, error) {
 			return nil, err
 		}
 		once := schedule.Once{At: t}
-		return once, nil
+		result = once
+		//return once, nil
 	case planNode.Lunar != "":
 		t, err := time.Parse("01-02 15:04:05", planNode.Lunar)
 		if err != nil {
@@ -50,7 +55,8 @@ func planToSchedule(planNode PlanNode) (schedule.Schedule, error) {
 			Minute: t.Minute(),
 			Second: t.Second(),
 		}
-		return lunar, nil
+		result = lunar
+		//return lunar, nil
 	case planNode.Solar != "":
 		t, err := time.Parse("01-02 15:04:05", planNode.Solar)
 		if err != nil {
@@ -63,16 +69,22 @@ func planToSchedule(planNode PlanNode) (schedule.Schedule, error) {
 			Minute: t.Minute(),
 			Second: t.Second(),
 		}
-		return solar, nil
+		result = solar
+		//return solar, nil
 	case planNode.Cron != "":
 		cron, err := schedule.NewCronSchedule(planNode.Cron)
 		if err != nil {
 			return nil, err
 		}
-		return cron, nil
+		result = cron
+		//return cron, nil
 	default:
 		return nil, fmt.Errorf("no valid schedule configured")
 	}
+	if len(planNode.NotifyOffset) > 0 {
+		return toOffsetSchedule(result, planNode.NotifyOffset)
+	}
+	return result, nil
 }
 
 func PlanToNodes(plan Plan) ([]*model.Node, error) {
@@ -113,4 +125,44 @@ func walk(planNode PlanNode, inherited []string, out *[]*model.Node) error {
 	}
 	*out = append(*out, &node)
 	return nil
+}
+
+func toOffsetSchedule(s schedule.Schedule, notifyOffsets []string) (schedule.Schedule, error) {
+	var offsets []time.Duration
+	for _, notifyOffset := range notifyOffsets {
+		offset, err := parseOffset(notifyOffset)
+		if err != nil {
+			return nil, err
+		}
+		offsets = append(offsets, offset)
+	}
+	offsetSchedule, err := schedule.NewOffsetSchedule(s, offsets)
+	if err != nil {
+		return nil, err
+	}
+	return offsetSchedule, nil
+}
+
+func parseOffset(s string) (time.Duration, error) {
+	s = strings.ReplaceAll(s, " ", "")
+	timeString := strings.Split(s, "T")[1]
+	switch {
+	case strings.HasSuffix(timeString, "d"):
+		timeNumString, _, _ := strings.Cut(timeString, "d")
+		num, err := strconv.Atoi(timeNumString)
+		if err != nil {
+			return 0, err
+		}
+		return time.Duration(num) * 24 * time.Hour, nil
+
+	case strings.HasSuffix(timeString, "h"):
+		timeNumString, _, _ := strings.Cut(timeString, "h")
+		num, err := strconv.Atoi(timeNumString)
+		if err != nil {
+			return 0, err
+		}
+		return time.Duration(num) * time.Hour, nil
+	default:
+		return 0, fmt.Errorf("not supported time char")
+	}
 }

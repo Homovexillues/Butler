@@ -19,7 +19,7 @@ type emailNotifier struct {
 
 func NewEmailNotifier(host string, port int, username string, authcode string, from string, to []string) (Notifier, error) {
 	if host == "" || port == 0 || username == "" || authcode == "" || from == "" || len(to) == 0 {
-		return emailNotifier{}, errors.New("invalid argument")
+		return nil, errors.New("invalid argument")
 	}
 	emailNotifier := emailNotifier{
 		host:     host,

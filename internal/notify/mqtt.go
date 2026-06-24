@@ -25,10 +25,10 @@ func NewMqttNotifier(broker string, topic string) (Notifier, error) {
 	client := mqtt.NewClient(opts)
 	token := client.Connect()
 	if !token.WaitTimeout(connectionTimeout) {
-		return mqttNotifier{}, fmt.Errorf("mqtt connection timeout:\n %w", token.Error())
+		return nil, fmt.Errorf("mqtt connection timeout:\n %w", token.Error())
 	}
 	if token.Error() != nil {
-		return mqttNotifier{}, fmt.Errorf("fail to connection mqtt broker:\n %w", token.Error())
+		return nil, fmt.Errorf("fail to connection mqtt broker:\n %w", token.Error())
 	}
 	mqttNotifier := mqttNotifier{
 		Client: client,
