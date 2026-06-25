@@ -5,7 +5,6 @@ import (
 	"os"
 	"path/filepath"
 
-	"butler/internal/model"
 	"butler/internal/parser"
 )
 
@@ -15,8 +14,12 @@ type Config struct {
 }
 
 type MqttSettings struct {
-	Broker string `json:"broker"`
-	Topic  string `json:"topic"`
+	Broker     string `json:"broker"`
+	Topic      string `json:"topic"`
+	Username   string `json:"username"`
+	Password   string `json:"password"`
+	CertFile   string `json:"certfile"`
+	SkipVerify bool   `json:"skipverify"`
 }
 type EmailSettings struct {
 	Host     string   `json:"host"`
@@ -63,25 +66,21 @@ func ensureDirectory() (string, error) {
 	return configDir, nil
 }
 
-func LoadPlan() ([]*model.Node, error) {
+func LoadPlan() (*parser.Plan, error) {
 	configDir, err := ensureDirectory()
 	if err != nil {
-		return []*model.Node{}, err
+		return nil, err
 	}
 	planPath := filepath.Join(configDir, "plan.jsonc")
 	err = ensureFile(planPath, EveryoneReadAndOwnerWrite)
 	if err != nil {
-		return []*model.Node{}, err
+		return nil, err
 	}
 	plan, err := parser.Parse[parser.Plan](planPath)
 	if err != nil {
-		return []*model.Node{}, err
+		return nil, err
 	}
-	nodes, err := parser.PlanToNodes(plan)
-	if err != nil {
-		return []*model.Node{}, err
-	}
-	return nodes, nil
+	return &plan, nil
 }
 
 func ensureFile(path string, fileMode os.FileMode) error {
@@ -97,4 +96,8 @@ func ensureFile(path string, fileMode os.FileMode) error {
 		return err
 	}
 	return nil
+}
+
+func ValidateConfig() []error {
+	return []error{}
 }

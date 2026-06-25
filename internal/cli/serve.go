@@ -8,7 +8,7 @@ import (
 
 	"butler/internal/config"
 	"butler/internal/engine"
-
+	"butler/internal/parser"
 	"github.com/spf13/cobra"
 )
 
@@ -21,9 +21,13 @@ var serveCmd = &cobra.Command{
 			return fmt.Errorf("fail to load config:\n%w", err)
 		}
 
-		nodes, err := config.LoadPlan()
+		plan, err := config.LoadPlan()
 		if err != nil {
 			return fmt.Errorf("fail to load plan:\n%w", err)
+		}
+		nodes, err := parser.PlanToNodes(*plan)
+		if err != nil {
+			return fmt.Errorf("fail to convert plan to nodes:\n%w", err)
 		}
 
 		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
