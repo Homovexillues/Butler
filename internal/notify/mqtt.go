@@ -32,12 +32,13 @@ func NewMqttNotifier(broker string, topic string, username string, password stri
 	if password != "" {
 		opts.SetPassword(password)
 	}
+	useTLS := false
 	if insecure {
-		protocol = "tls"
+		useTLS = true
 		tlsConfig.InsecureSkipVerify = insecure
 	}
 	if crtFilePath != "" {
-		protocol = "tls"
+		useTLS = true
 		caCert, err := os.ReadFile(crtFilePath)
 		if err != nil {
 			return nil, fmt.Errorf("fail to read CA cert: %w", err)
@@ -45,6 +46,9 @@ func NewMqttNotifier(broker string, topic string, username string, password stri
 		caCertPool := x509.NewCertPool()
 		caCertPool.AppendCertsFromPEM(caCert)
 		tlsConfig.RootCAs = caCertPool
+	}
+	if useTLS {
+		protocol = "tls"
 		opts.SetTLSConfig(tlsConfig)
 	}
 	address := protocol + "://" + broker
