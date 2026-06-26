@@ -1,14 +1,6 @@
 package cli
 
 import (
-	"context"
-	"fmt"
-	"os"
-	"os/signal"
-
-	"butler/internal/config"
-	"butler/internal/engine"
-	"butler/internal/parser"
 	"github.com/spf13/cobra"
 )
 
@@ -16,27 +8,7 @@ var serveCmd = &cobra.Command{
 	Use:   "serve",
 	Short: "前台运行调度器",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		cfg, err := config.LoadConfig()
-		if err != nil {
-			return fmt.Errorf("fail to load config:\n%w", err)
-		}
-
-		plan, err := config.LoadPlan()
-		if err != nil {
-			return fmt.Errorf("fail to load plan:\n%w", err)
-		}
-		nodes, err := parser.PlanToNodes(*plan)
-		if err != nil {
-			return fmt.Errorf("fail to convert plan to nodes:\n%w", err)
-		}
-
-		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
-		defer stop()
-
-		registry := buildRegistry(cfg)
-
-		engine.Run(ctx, registry, nodes)
-		return nil
+		return svc.Run()
 	},
 }
 
