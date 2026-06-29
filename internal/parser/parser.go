@@ -80,7 +80,13 @@ func toOffsetSchedule(s schedule.Schedule, notifyOffsets []string) (schedule.Sch
 
 func parseOffset(s string) (time.Duration, error) {
 	s = strings.ReplaceAll(s, " ", "")
+	if s == "" || !strings.Contains(s, "T") {
+		return 0, nil
+	}
 	timeString := strings.Split(s, "T")[1]
+	if timeString == "" {
+		return 0, nil
+	}
 	switch {
 	case strings.HasSuffix(timeString, "d"):
 		timeNumString, _, _ := strings.Cut(timeString, "d")

@@ -2,6 +2,7 @@ package parser
 
 import (
 	"fmt"
+	"strings"
 	"time"
 
 	"butler/internal/model"
@@ -22,6 +23,49 @@ type PlanNode struct {
 	NotifyOffset []string
 	Channels     []string
 	Children     []PlanNode
+}
+
+func (plan Plan) PrintTree() error {
+	var walk func(planNode PlanNode, depth int, isLast bool) error
+	walk = func(planNode PlanNode, depth int, isLast bool) error {
+		if len(planNode.Children) > 0 {
+			fmt.Println(planNode.Title)
+			for index, child := range planNode.Children {
+				isLast := index == len(planNode.Children)-1
+				if err := walk(child, depth+1, isLast); err != nil {
+					return err
+				}
+			}
+		} else {
+			node, err := planNode.toNode([]string{})
+			if err != nil {
+				return err
+			}
+			if node.Schedule == nil {
+				return fmt.Errorf("node %s has no schedule", node.Title)
+			}
+			next, found := node.Schedule.NextAfter(time.Now())
+			if !found {
+				fmt.Printf("node %s is expired", node.Title)
+			} else {
+
+				intend := strings.Repeat("─", depth)
+				if isLast {
+					fmt.Printf("└%s%s\t%s\n", intend, node.Title, next.Format("2006-01-02 15:04:05"))
+				} else {
+					fmt.Printf("├%s%s\t%s\n", intend, node.Title, next.Format("2006-01-02 15:04:05"))
+				}
+			}
+		}
+		return nil
+	}
+	for index, child := range plan.Children {
+		isLast := index == len(plan.Children)-1
+		if err := walk(child, 0, isLast); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (planNode PlanNode) toNode(channels []string) (model.Node, error) {
