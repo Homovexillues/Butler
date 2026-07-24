@@ -6,3 +6,4 @@
 .claude/
 plan.jsonc
 config.jsonc
+.gocache

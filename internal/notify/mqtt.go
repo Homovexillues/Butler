@@ -6,6 +6,7 @@ import (
 	"crypto/x509"
 	"encoding/json"
 	"fmt"
+	"log"
 	"os"
 	"time"
 
@@ -24,6 +25,7 @@ const (
 
 func NewMqttNotifier(broker string, topic string, username string, password string, crtFilePath string, insecure bool) (Notifier, error) {
 	opts := mqtt.NewClientOptions()
+	opts.SetConnectRetry(true)
 	tlsConfig := &tls.Config{}
 	protocol := "tcp"
 	if username != "" {
@@ -54,14 +56,23 @@ func NewMqttNotifier(broker string, topic string, username string, password stri
 	address := protocol + "://" + broker
 	opts.AddBroker(address)
 	opts.SetClientID("butler")
+
+	opts.SetConnectionNotificationHandler(func(_ mqtt.Client, event mqtt.ConnectionNotification) {
+		switch e := event.(type) {
+		case mqtt.ConnectionNotificationConnecting:
+			log.Printf("mqtt connecting,attempt=%d reconnect=%v,", e.Attempt, e.IsReconnect)
+		case mqtt.ConnectionNotificationConnected:
+			log.Printf("mqtt broker connected")
+		case mqtt.ConnectionNotificationFailed:
+			log.Printf("mqtt connection failed: %v", e.Reason)
+		case mqtt.ConnectionNotificationLost:
+			log.Printf("mqtt connection lost: %v", e.Reason)
+		}
+	})
+
 	client := mqtt.NewClient(opts)
-	token := client.Connect()
-	if !token.WaitTimeout(connectionTimeout) {
-		return nil, fmt.Errorf("mqtt connection timeout:\n %w", token.Error())
-	}
-	if token.Error() != nil {
-		return nil, fmt.Errorf("fail to connection mqtt broker:\n %w", token.Error())
-	}
+	client.Connect()
+
 	mqttNotifier := mqttNotifier{
 		Client: client,
 		Topic:  topic,

@@ -103,6 +103,13 @@ func parseOffset(s string) (time.Duration, error) {
 			return 0, err
 		}
 		return time.Duration(num) * time.Hour, nil
+	case strings.HasSuffix(timeString, "m"):
+		timeNumString, _, _ := strings.Cut(timeString, "m")
+		num, err := strconv.Atoi(timeNumString)
+		if err != nil {
+			return 0, err
+		}
+		return time.Duration(num) * time.Minute, nil
 	default:
 		return 0, fmt.Errorf("not supported time char")
 	}

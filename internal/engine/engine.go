@@ -10,7 +10,7 @@ import (
 )
 
 func Run(ctx context.Context, registry *notify.Registry, nodes []*model.Node) {
-	maxTick := 1 * time.Minute
+	internal := 1 * time.Minute
 	for {
 		now := time.Now()
 		var soonest time.Time
@@ -30,7 +30,7 @@ func Run(ctx context.Context, registry *notify.Registry, nodes []*model.Node) {
 			return
 		}
 		duration := time.Until(soonest)
-		duration = min(duration, maxTick)
+		duration = min(duration, internal)
 		timer := time.NewTimer(duration)
 		select {
 		case <-timer.C:
