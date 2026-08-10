@@ -2,11 +2,10 @@
 package config
 
 import (
+	"butler/internal/parser"
 	"fmt"
 	"os"
 	"path/filepath"
-
-	"butler/internal/parser"
 )
 
 type Config struct {
@@ -51,6 +50,7 @@ func LoadConfig() (Config, error) {
 	if err != nil {
 		return Config{}, err
 	}
+	config.Mqtt.CertFile = filepath.Join(configDir, config.Mqtt.CertFile)
 	return config, nil
 }
 

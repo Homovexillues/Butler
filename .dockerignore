@@ -1,0 +1,13 @@
+.git
+.gitignore
+
+.gocache
+*.exe
+butler
+*.crt
+*.key
+*.pem
+
+.claude
+.vscode
+.idea
