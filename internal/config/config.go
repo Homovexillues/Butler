@@ -2,10 +2,11 @@
 package config
 
 import (
-	"butler/internal/parser"
 	"fmt"
 	"os"
 	"path/filepath"
+
+	"butler/internal/parser"
 )
 
 type Config struct {
@@ -16,6 +17,7 @@ type Config struct {
 type MqttSettings struct {
 	Broker     string `json:"broker"`
 	Topic      string `json:"topic"`
+	ClientID   string `json:"clientId"`
 	Username   string `json:"username"`
 	Password   string `json:"password"`
 	CertFile   string `json:"certfile"`
@@ -50,7 +52,9 @@ func LoadConfig() (Config, error) {
 	if err != nil {
 		return Config{}, err
 	}
-	config.Mqtt.CertFile = filepath.Join(configDir, config.Mqtt.CertFile)
+	if config.Mqtt.CertFile != "" && !filepath.IsAbs(config.Mqtt.CertFile) {
+		config.Mqtt.CertFile = filepath.Join(configDir, config.Mqtt.CertFile)
+	}
 	return config, nil
 }
 

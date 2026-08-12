@@ -23,7 +23,7 @@ const (
 	connectionTimeout = 3 * time.Second
 )
 
-func NewMqttNotifier(broker string, topic string, username string, password string, crtFilePath string, insecure bool) (Notifier, error) {
+func NewMqttNotifier(broker string, topic string, username string, password string, clientId string, crtFilePath string, insecure bool) (Notifier, error) {
 	opts := mqtt.NewClientOptions()
 	opts.SetConnectRetry(true)
 	tlsConfig := &tls.Config{}
@@ -46,7 +46,10 @@ func NewMqttNotifier(broker string, topic string, username string, password stri
 			return nil, fmt.Errorf("fail to read CA cert: %w", err)
 		}
 		caCertPool := x509.NewCertPool()
-		caCertPool.AppendCertsFromPEM(caCert)
+		if ok := caCertPool.AppendCertsFromPEM(caCert); !ok {
+			return nil, fmt.Errorf("fail to parse CA cert:%s", crtFilePath)
+		}
+
 		tlsConfig.RootCAs = caCertPool
 	}
 	if useTLS {
@@ -55,7 +58,10 @@ func NewMqttNotifier(broker string, topic string, username string, password stri
 	}
 	address := protocol + "://" + broker
 	opts.AddBroker(address)
-	opts.SetClientID("butler")
+	if clientId == "" {
+		clientId = "butler"
+	}
+	opts.SetClientID(clientId)
 
 	opts.SetConnectionNotificationHandler(func(_ mqtt.Client, event mqtt.ConnectionNotification) {
 		switch e := event.(type) {
