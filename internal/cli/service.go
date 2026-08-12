@@ -4,10 +4,13 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"net/http"
 	"os"
 	"os/user"
 	"runtime"
+	"time"
 
+	"butler/internal/api"
 	"butler/internal/config"
 	"butler/internal/engine"
 	"butler/internal/parser"
@@ -17,6 +20,7 @@ import (
 
 type program struct {
 	cancel context.CancelFunc
+	server *http.Server
 }
 
 var svc service.Service
@@ -38,16 +42,37 @@ func (p *program) Start(s service.Service) error {
 	}
 
 	registry := buildRegistry(cfg)
+
 	ctx, cancel := context.WithCancel(context.Background())
 	p.cancel = cancel
+
+	p.server = &http.Server{
+		Addr:              ":8191",
+		Handler:           api.NewRouter(nodes),
+		ReadHeaderTimeout: 5 * time.Second,
+	}
+	go func(ctx context.Context) {
+		err := p.server.ListenAndServe()
+		if err != nil {
+			log.Printf("HTTP server stopped:%v", err)
+		}
+	}(ctx)
+
 	go engine.Run(ctx, registry, nodes)
 
 	return nil
 }
 
 func (p *program) Stop(s service.Service) error {
-	p.cancel()
-	return nil
+	if p.cancel != nil {
+		p.cancel()
+	}
+	if p.server == nil {
+		return nil
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	return p.server.Shutdown(ctx)
 }
 
 // 在用systemd启动的场景下，

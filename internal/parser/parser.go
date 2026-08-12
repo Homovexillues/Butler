@@ -2,6 +2,7 @@
 package parser
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -20,6 +21,9 @@ func Parse[T any](path string) (T, error) {
 	raw, err := os.ReadFile(path)
 	if err != nil {
 		return result, err
+	}
+	if len(bytes.TrimSpace(raw)) == 0 {
+		return result, fmt.Errorf("parse %s file is empty", path)
 	}
 	stdJSONData, err := hujson.Standardize(raw)
 	if err != nil {
