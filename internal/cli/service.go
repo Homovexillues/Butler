@@ -51,12 +51,12 @@ func (p *program) Start(s service.Service) error {
 		Handler:           api.NewRouter(nodes),
 		ReadHeaderTimeout: 5 * time.Second,
 	}
-	go func(ctx context.Context) {
+	go func() {
 		err := p.server.ListenAndServe()
 		if err != nil {
 			log.Printf("HTTP server stopped:%v", err)
 		}
-	}(ctx)
+	}()
 
 	go engine.Run(ctx, registry, nodes)
 
@@ -70,7 +70,7 @@ func (p *program) Stop(s service.Service) error {
 	if p.server == nil {
 		return nil
 	}
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	return p.server.Shutdown(ctx)
 }
