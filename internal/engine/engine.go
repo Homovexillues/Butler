@@ -3,6 +3,7 @@ package engine
 
 import (
 	"context"
+	"log"
 	"time"
 
 	"butler/internal/model"
@@ -38,7 +39,10 @@ func Run(ctx context.Context, registry *notify.Registry, nodes []*model.Node) {
 			// 这是个临时做法，正确做法其实是在node上打标，不过现在MVP就先这么做着
 			if !time.Now().Before(soonest) {
 				message := notify.Message{Title: target.Title, Body: target.Body}
-				notify.Broadcast(ctx, registry, target.Channels, message)
+				err := notify.Broadcast(ctx, registry, target.Channels, message)
+				if err != nil {
+					log.Printf("broadcast error: %w", err)
+				}
 			}
 		case <-ctx.Done():
 			timer.Stop()

@@ -1,0 +1,69 @@
+# 指定K8s对象的种类和API版本
+apiVersion: apps/v1
+kind: Deployment
+# 对象名称和标签
+metadata:
+  name: butler
+  namespace: butler
+  labels:
+    app: butler
+spec:
+  # Deployment用它寻找自己管理的Pod，必须和template保持一致
+  selector:
+    matchLabels:
+      app: butler
+  # 单实例运行
+  replicas: 1
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        app: butler
+    spec:
+      containers:
+        - name: butler
+          image: butler:v0.2.0
+          imagePullPolicy: Never
+          ports:
+            - name: http
+              containerPort: 8191
+              protocol: TCP
+          # 进程是否已失去工作能力，失败后k3s会重启容器
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 5
+            timeoutSeconds: 5
+            failureThreshold: 3
+            periodSeconds: 10
+          # 是否可以接收流量，失败后Service不再向其转发流量，但是不会重启
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 2
+            failureThreshold: 3
+          volumeMounts:
+            - name: butler-config
+              mountPath: /home/butler/.config/butler
+              readOnly: true
+      volumes:
+        - name: butler-config
+          projected:
+            sources:
+              - configMap:
+                  name: butler-plan
+                  items:
+                    - key: plan.jsonc
+                      path: plan.jsonc
+              - secret:
+                  name: butler-runtime
+                  items:
+                    - key: config.jsonc
+                      path: config.jsonc
+                    - key: mqtt_broker.crt
+                      path: mqtt_broker.crt

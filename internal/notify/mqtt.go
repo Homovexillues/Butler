@@ -77,7 +77,13 @@ func NewMqttNotifier(broker string, topic string, username string, password stri
 	})
 
 	client := mqtt.NewClient(opts)
-	client.Connect()
+	token := client.Connect()
+	if !token.WaitTimeout(connectionTimeout) {
+		return nil, fmt.Errorf("connection timeout %v", token.Error())
+	}
+	if token.Error() != nil {
+		return nil, fmt.Errorf("fail to connect broker: %v", token.Error())
+	}
 
 	mqttNotifier := mqttNotifier{
 		Client: client,
