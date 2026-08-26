@@ -15,9 +15,11 @@ import (
 // 完成、接收 actionResult，并在成功后更新 LastFired。
 func TestRun_触发最近的Once并产生通知请求(t *testing.T) {
 	triggerAt := time.Now().Add(50 * time.Millisecond)
+	lastFired := time.Time{}
 	node := &model.Node{
-		Title:    "测试通知",
-		Schedule: schedule.Once{At: triggerAt},
+		Title:     "测试通知",
+		Schedule:  schedule.Once{At: triggerAt},
+		LastFired: &lastFired,
 		Action: action.NotifyAction{
 			Channels: []string{"system"},
 			Message: notify.Message{
@@ -31,9 +33,13 @@ func TestRun_触发最近的Once并产生通知请求(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 
+	saved := make(chan struct{}, 1)
 	done := make(chan struct{})
 	go func() {
-		Run(ctx, []*model.Node{node}, requests)
+		Run(ctx, []*model.Node{node}, requests, func() error {
+			saved <- struct{}{}
+			return nil
+		})
 		close(done)
 	}()
 
@@ -55,16 +61,27 @@ func TestRun_触发最近的Once并产生通知请求(t *testing.T) {
 		t.Fatal("Run 未在超时内结束，可能没有处理 Action 的执行结果")
 	}
 
-	if node.LastFired.IsZero() {
+	if node.LastFired == nil || node.LastFired.IsZero() {
 		t.Fatal("Action 成功后没有更新 LastFired")
+	}
+	if node.LastFired.Before(triggerAt) {
+		t.Fatalf("LastFired = %s，早于计划触发时间 %s", node.LastFired, triggerAt)
+	}
+
+	select {
+	case <-saved:
+	default:
+		t.Fatal("Action 成功后没有调用状态保存函数")
 	}
 }
 
 // TestRun_ctx取消能干净退出 验证等待未来任务时，ctx 取消可以立即停止 Engine。
 func TestRun_ctx取消能干净退出(t *testing.T) {
+	lastFired := time.Time{}
 	node := &model.Node{
-		Title:    "未来任务",
-		Schedule: schedule.Once{At: time.Now().Add(time.Hour)},
+		Title:     "未来任务",
+		Schedule:  schedule.Once{At: time.Now().Add(time.Hour)},
+		LastFired: &lastFired,
 		Action: action.NotifyAction{
 			Channels: []string{"system"},
 			Message:  notify.Message{Title: "未来任务"},
@@ -76,7 +93,7 @@ func TestRun_ctx取消能干净退出(t *testing.T) {
 	done := make(chan struct{})
 
 	go func() {
-		Run(ctx, []*model.Node{node}, requests)
+		Run(ctx, []*model.Node{node}, requests, func() error { return nil })
 		close(done)
 	}()
 

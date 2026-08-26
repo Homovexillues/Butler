@@ -2,6 +2,7 @@
 package config
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -86,6 +87,27 @@ func LoadPlan() (*parser.PlanNode, error) {
 		return nil, err
 	}
 	return &plan, nil
+}
+
+func SavePlan(plan *parser.PlanNode) error {
+	configDir, err := ensureDirectory()
+	if err != nil {
+		return err
+	}
+	planPath := filepath.Join(configDir, "plan-new.jsonc")
+	data, err := json.MarshalIndent(plan, "", " ")
+	if err != nil {
+		return fmt.Errorf("marshal plan:%w", err)
+	}
+	data = append(data, '\n')
+	tempPath := planPath + ".tmp"
+	if err := os.WriteFile(tempPath, data, EveryoneReadAndOwnerWrite); err != nil {
+		return fmt.Errorf("write temporary path: %w", err)
+	}
+	if err := os.Rename(tempPath, planPath); err != nil {
+		return fmt.Errorf("replace plan file:%w", err)
+	}
+	return nil
 }
 
 func ensureFile(path string, fileMode os.FileMode) error {

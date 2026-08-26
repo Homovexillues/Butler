@@ -12,17 +12,17 @@ import (
 )
 
 type PlanNode struct {
-	Title         string
-	Body          string
-	Once          string
-	Solar         string
-	Lunar         string
-	Cron          string
-	CommandAction *action.CommandAction
-	NotifyAction  *action.NotifyAction
-	TriggerOffset []string
-	Children      []PlanNode
-	LastFired     time.Time
+	Title         string                `json:",omitempty"`
+	Body          string                `json:",omitempty"`
+	Once          string                `json:",omitempty"`
+	Solar         string                `json:",omitempty"`
+	Lunar         string                `json:",omitempty"`
+	Cron          string                `json:",omitempty"`
+	CommandAction *action.CommandAction `json:",omitempty"`
+	NotifyAction  *action.NotifyAction  `json:",omitempty"`
+	TriggerOffset []string              `json:",omitempty"`
+	Children      []PlanNode            `json:",omitempty"`
+	LastFired     time.Time             `json:",omitzero"`
 }
 
 func (plan PlanNode) PrintTree() error {
@@ -46,9 +46,8 @@ func (plan PlanNode) PrintTree() error {
 			}
 			next, found := node.Schedule.NextAfter(time.Now())
 			if !found {
-				fmt.Printf("node %s is expired", node.Title)
+				fmt.Printf("node %s is expired\n", node.Title)
 			} else {
-
 				intend := strings.Repeat("─", depth)
 				if isLast {
 					fmt.Printf("└%s%s\t%s\n", intend, node.Title, next.Format("2006-01-02 15:04:05"))
@@ -68,7 +67,7 @@ func (plan PlanNode) PrintTree() error {
 	return nil
 }
 
-func (planNode PlanNode) toNode() (model.Node, error) {
+func (planNode *PlanNode) toNode() (model.Node, error) {
 	if planNode.Title == "" && planNode.Body == "" {
 		return model.Node{}, fmt.Errorf("title and body can not both be empty")
 	}
@@ -146,7 +145,7 @@ func (planNode PlanNode) toNode() (model.Node, error) {
 		Body:      planNode.Body,
 		Action:    actionResult,
 		Schedule:  scheduleResult,
-		LastFired: planNode.LastFired,
+		LastFired: &planNode.LastFired,
 	}
 
 	return node, nil
@@ -195,10 +194,6 @@ func (plan PlanNode) ValidatePlan() []error {
 		if hasChild {
 			for _, child := range planNode.Children {
 				walk(child, planNode.Title+"/"+child.Title)
-			}
-		} else {
-			if planNode.NotifyAction != nil && len(planNode.NotifyAction.Channels) > 0 {
-				errs = append(errs, fmt.Errorf("[%s] node and its parent has no channel configured", title))
 			}
 		}
 		if validExpressionCount == 1 {

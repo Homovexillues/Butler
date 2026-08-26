@@ -13,5 +13,5 @@ type Node struct {
 	Body      string
 	Schedule  schedule.Schedule
 	Action    action.Action
-	LastFired time.Time
+	LastFired *time.Time
 }

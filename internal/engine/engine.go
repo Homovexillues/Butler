@@ -10,7 +10,7 @@ import (
 	"butler/internal/notify"
 )
 
-func Run(ctx context.Context, nodes []*model.Node, requests chan<- notify.Request) {
+func Run(ctx context.Context, nodes []*model.Node, requests chan<- notify.Request, saveState func() error) {
 	internal := 1 * time.Minute
 	results := make(chan actionResult, 10)
 	running := make(map[*model.Node]bool)
@@ -23,7 +23,7 @@ func Run(ctx context.Context, nodes []*model.Node, requests chan<- notify.Reques
 				continue
 			}
 			// 如果有未发的任务，优先补发
-			next, ok := node.Schedule.NextAfter(node.LastFired)
+			next, ok := node.Schedule.NextAfter(*node.LastFired)
 			if !ok {
 				continue
 			}
@@ -71,7 +71,10 @@ func Run(ctx context.Context, nodes []*model.Node, requests chan<- notify.Reques
 				}
 				continue
 			}
-			result.Node.LastFired = time.Now()
+			*result.Node.LastFired = time.Now()
+			if err := saveState(); err != nil {
+				log.Printf("fail to save state: %v", err)
+			}
 		case <-ctx.Done():
 			if timer != nil {
 				timer.Stop()

@@ -32,10 +32,11 @@ func Parse[T any](path string) (T, error) {
 	return result, json.Unmarshal(stdJSONData, &result)
 }
 
-func PlanToNodes(plan PlanNode) ([]*model.Node, error) {
+func PlanToNodes(plan *PlanNode) ([]*model.Node, error) {
 	var out []*model.Node
-	for _, child := range plan.Children {
-		err := walk(child, &out)
+	// 如果用index,item 的写法的话会创建副本
+	for i := range plan.Children {
+		err := walk(&plan.Children[i], &out)
 		if err != nil {
 			return nil, err
 		}
@@ -43,10 +44,10 @@ func PlanToNodes(plan PlanNode) ([]*model.Node, error) {
 	return out, nil
 }
 
-func walk(planNode PlanNode, out *[]*model.Node) error {
+func walk(planNode *PlanNode, out *[]*model.Node) error {
 	if len(planNode.Children) > 0 {
-		for _, pNode := range planNode.Children {
-			err := walk(pNode, out)
+		for i := range planNode.Children {
+			err := walk(&planNode.Children[i], out)
 			if err != nil {
 				return err
 			}

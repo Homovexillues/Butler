@@ -37,7 +37,7 @@ func (p *program) Start(s service.Service) error {
 	if err != nil {
 		return fmt.Errorf("fail to load plan:\n%w", err)
 	}
-	nodes, err := parser.PlanToNodes(*plan)
+	nodes, err := parser.PlanToNodes(plan)
 	if err != nil {
 		return fmt.Errorf("fail to convert plan to nodes:\n%w", err)
 	}
@@ -62,7 +62,7 @@ func (p *program) Start(s service.Service) error {
 		}
 	}()
 
-	go engine.Run(ctx, nodes, requests)
+	go engine.Run(ctx, nodes, requests, func() error { return config.SavePlan(plan) })
 
 	return nil
 }
