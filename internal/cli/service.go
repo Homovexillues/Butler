@@ -13,6 +13,7 @@ import (
 	"butler/internal/api"
 	"butler/internal/config"
 	"butler/internal/engine"
+	"butler/internal/notify"
 	"butler/internal/parser"
 
 	"github.com/kardianos/service"
@@ -43,7 +44,10 @@ func (p *program) Start(s service.Service) error {
 
 	registry := buildRegistry(cfg)
 
+	requests := make(chan notify.Request, 1)
+
 	ctx, cancel := context.WithCancel(context.Background())
+	go notify.MessageLoop(ctx, registry, requests)
 	p.cancel = cancel
 
 	p.server = &http.Server{
@@ -58,7 +62,7 @@ func (p *program) Start(s service.Service) error {
 		}
 	}()
 
-	go engine.Run(ctx, registry, nodes)
+	go engine.Run(ctx, nodes, requests)
 
 	return nil
 }

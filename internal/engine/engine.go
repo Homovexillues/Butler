@@ -10,15 +10,20 @@ import (
 	"butler/internal/notify"
 )
 
-func Run(ctx context.Context, registry *notify.Registry, nodes []*model.Node) {
+func Run(ctx context.Context, nodes []*model.Node, requests chan<- notify.Request) {
 	internal := 1 * time.Minute
+	results := make(chan actionResult, 10)
+	running := make(map[*model.Node]bool)
 	for {
-		now := time.Now()
 		var soonest time.Time
 		var target *model.Node
 		// find the sonnest node to notify
 		for _, node := range nodes {
-			next, ok := node.Schedule.NextAfter(now)
+			if running[node] {
+				continue
+			}
+			// 如果有未发的任务，优先补发
+			next, ok := node.Schedule.NextAfter(node.LastFired)
 			if !ok {
 				continue
 			}
@@ -26,26 +31,51 @@ func Run(ctx context.Context, registry *notify.Registry, nodes []*model.Node) {
 				soonest, target = next, node
 			}
 		}
-		// no node to notify at all
-		if target == nil {
+		var timer *time.Timer
+		var timeChannel <-chan time.Time
+		switch {
+		case target != nil:
+			duration := time.Until(soonest)
+			duration = min(duration, internal)
+			timer = time.NewTimer(duration)
+			timeChannel = timer.C
+		case len(running) == 0:
 			return
 		}
-		duration := time.Until(soonest)
-		duration = min(duration, internal)
-		timer := time.NewTimer(duration)
+
 		select {
-		case <-timer.C:
+		case <-timeChannel:
 			// todo: 用发送标志而非时序判断发送
 			// 这是个临时做法，正确做法其实是在node上打标，不过现在MVP就先这么做着
 			if !time.Now().Before(soonest) {
-				message := notify.Message{Title: target.Title, Body: target.Body}
-				err := notify.Broadcast(ctx, registry, target.Channels, message)
-				if err != nil {
-					log.Printf("broadcast error: %w", err)
-				}
+				running[target] = true
+				startAction(ctx, target, soonest, requests, results)
 			}
+		case result := <-results:
+			if timer != nil {
+				timer.Stop()
+			}
+			delete(running, result.Node)
+			if result.Err != nil {
+				log.Printf(
+					"action %q failed: %v",
+					result.Node.Title,
+					result.Err,
+				)
+				requests <- notify.Request{
+					Channels: []string{notify.ChannelMQTT.String()},
+					Message: notify.Message{
+						Title: "fail to execute action",
+						Body:  result.Err.Error(),
+					},
+				}
+				continue
+			}
+			result.Node.LastFired = time.Now()
 		case <-ctx.Done():
-			timer.Stop()
+			if timer != nil {
+				timer.Stop()
+			}
 			return
 		}
 	}

@@ -5,7 +5,6 @@ import (
 	"log"
 
 	"butler/internal/config"
-	"butler/internal/parser"
 
 	"github.com/spf13/cobra"
 )
@@ -24,11 +23,7 @@ var validateCmd = &cobra.Command{
 		if err != nil {
 			log.Fatalf("fail to load plan:\n%s", err.Error())
 		}
-		known := map[string]bool{}
-		for _, channel := range parser.KnownChannels() {
-			known[channel] = true
-		}
-		errs = append(errs, plan.ValidatePlan(known)...)
+		errs = append(errs, plan.ValidatePlan()...)
 		for _, err := range errs {
 			log.Fatalf("%s\n", err.Error())
 		}

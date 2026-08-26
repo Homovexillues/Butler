@@ -33,9 +33,8 @@ func NewRouter(nodes []*model.Node) *gin.Engine {
 		now := time.Now()
 		for _, node := range nodes {
 			task := taskResponse{
-				Title:    node.Title,
-				Body:     node.Body,
-				Channels: node.Channels,
+				Title: node.Title,
+				Body:  node.Body,
 			}
 			if next, found := node.Schedule.NextAfter(now); found {
 				task.NextTriggeredAt = &next

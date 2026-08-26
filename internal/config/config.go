@@ -71,17 +71,17 @@ func ensureDirectory() (string, error) {
 	return configDir, nil
 }
 
-func LoadPlan() (*parser.Plan, error) {
+func LoadPlan() (*parser.PlanNode, error) {
 	configDir, err := ensureDirectory()
 	if err != nil {
 		return nil, err
 	}
-	planPath := filepath.Join(configDir, "plan.jsonc")
+	planPath := filepath.Join(configDir, "plan-new.jsonc")
 	err = ensureFile(planPath, EveryoneReadAndOwnerWrite)
 	if err != nil {
 		return nil, err
 	}
-	plan, err := parser.Parse[parser.Plan](planPath)
+	plan, err := parser.Parse[parser.PlanNode](planPath)
 	if err != nil {
 		return nil, err
 	}
@@ -92,7 +92,7 @@ func ensureFile(path string, fileMode os.FileMode) error {
 	// os.O_CREATE: 如果文件不存在则创建
 	// os.O_EXCL: 与 O_CREATE 一起使用，文件必须不存在，否则返回错误
 	// os.O_RDONLY: 以只读方式打开
-	_, err := os.OpenFile(path, os.O_RDONLY|os.O_CREATE|os.O_EXCL, fileMode)
+	file, err := os.OpenFile(path, os.O_RDONLY|os.O_CREATE|os.O_EXCL, fileMode)
 	if err != nil {
 		// 是文件存在类型的错误
 		if os.IsExist(err) {
@@ -100,6 +100,7 @@ func ensureFile(path string, fileMode os.FileMode) error {
 		}
 		return err
 	}
+	defer file.Close()
 	return nil
 }
 

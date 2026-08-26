@@ -32,10 +32,10 @@ func Parse[T any](path string) (T, error) {
 	return result, json.Unmarshal(stdJSONData, &result)
 }
 
-func PlanToNodes(plan Plan) ([]*model.Node, error) {
+func PlanToNodes(plan PlanNode) ([]*model.Node, error) {
 	var out []*model.Node
 	for _, child := range plan.Children {
-		err := walk(child, nil, &out)
+		err := walk(child, &out)
 		if err != nil {
 			return nil, err
 		}
@@ -43,14 +43,10 @@ func PlanToNodes(plan Plan) ([]*model.Node, error) {
 	return out, nil
 }
 
-func walk(planNode PlanNode, inherited []string, out *[]*model.Node) error {
-	channels := planNode.Channels
-	if len(channels) == 0 {
-		channels = inherited
-	}
+func walk(planNode PlanNode, out *[]*model.Node) error {
 	if len(planNode.Children) > 0 {
 		for _, pNode := range planNode.Children {
-			err := walk(pNode, channels, out)
+			err := walk(pNode, out)
 			if err != nil {
 				return err
 			}
@@ -58,7 +54,7 @@ func walk(planNode PlanNode, inherited []string, out *[]*model.Node) error {
 		return nil
 	}
 
-	node, err := planNode.toNode(channels)
+	node, err := planNode.toNode()
 	if err != nil {
 		return err
 	}

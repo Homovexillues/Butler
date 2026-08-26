@@ -13,9 +13,9 @@ type mockNotifier struct {
 	name     string
 	failWith error // 非 nil 则 Send 返回该错误
 
-	mu       sync.Mutex
-	calls    int
-	gotMsgs  []Message
+	mu      sync.Mutex
+	calls   int
+	gotMsgs []Message
 }
 
 func (m *mockNotifier) Name() string { return m.name }
@@ -83,7 +83,9 @@ func TestBroadcast(t *testing.T) {
 		reg.Register(sys)
 		reg.Register(mqtt)
 
-		Broadcast(ctx, reg, []string{"system", "mqtt"}, msg)
+		if err := broadcast(ctx, reg, []string{"system", "mqtt"}, msg); err != nil {
+			t.Fatalf("broadcast 返回错误：%v", err)
+		}
 
 		if sys.callCount() != 1 {
 			t.Errorf("system 被调用 %d 次，期望 1", sys.callCount())
@@ -104,8 +106,11 @@ func TestBroadcast(t *testing.T) {
 		reg.Register(bad)
 		reg.Register(good)
 
-		// bad 失败只应被 log，不影响 good，也不 panic / 退出
-		Broadcast(ctx, reg, []string{"mqtt", "email"}, msg)
+		// bad 失败应该通过返回值报告，但不能影响 good。
+		err := broadcast(ctx, reg, []string{"mqtt", "email"}, msg)
+		if !errors.Is(err, bad.failWith) {
+			t.Fatalf("broadcast 错误 = %v，期望包含 %v", err, bad.failWith)
+		}
 
 		if bad.callCount() != 1 {
 			t.Errorf("失败渠道也应被调用 1 次，得到 %d", bad.callCount())
@@ -120,8 +125,10 @@ func TestBroadcast(t *testing.T) {
 		reg := NewRegistry()
 		reg.Register(good)
 
-		// "bark" 没注册，应被跳过并 log，"system" 照常发
-		Broadcast(ctx, reg, []string{"bark", "system"}, msg)
+		// "bark" 没注册，应返回错误，但 "system" 仍应照常发送。
+		if err := broadcast(ctx, reg, []string{"bark", "system"}, msg); err == nil {
+			t.Fatal("包含未注册渠道时，broadcast 应返回错误")
+		}
 
 		if good.callCount() != 1 {
 			t.Errorf("已注册渠道应发送 1 次，得到 %d", good.callCount())
@@ -130,6 +137,8 @@ func TestBroadcast(t *testing.T) {
 
 	t.Run("空渠道列表_不panic", func(t *testing.T) {
 		reg := NewRegistry()
-		Broadcast(ctx, reg, nil, msg) // 不应阻塞或 panic
+		if err := broadcast(ctx, reg, nil, msg); err != nil {
+			t.Fatalf("空渠道列表不应返回错误：%v", err)
+		}
 	})
 }

@@ -42,7 +42,6 @@ func TestListTasks(t *testing.T) {
 		{
 			Title:    "测试任务",
 			Body:     "测试正文",
-			Channels: []string{"mqtt"},
 			Schedule: schedule.Once{At: triggerAt},
 		},
 	}
@@ -75,10 +74,6 @@ func TestListTasks(t *testing.T) {
 
 	if task.Body != "测试正文" {
 		t.Errorf("body = %q, want %q", task.Body, "测试正文")
-	}
-
-	if len(task.Channels) != 1 || task.Channels[0] != "mqtt" {
-		t.Errorf("channels = %v, want [mqtt]", task.Channels)
 	}
 
 	if task.NextTriggeredAt == nil {

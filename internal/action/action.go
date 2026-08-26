@@ -7,5 +7,5 @@ import (
 )
 
 type Action interface {
-	Execute(ctx context.Context, message notify.Message) error
+	Execute(ctx context.Context, messageChannel chan<- notify.Request) error
 }

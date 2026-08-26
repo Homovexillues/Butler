@@ -5,27 +5,27 @@ import (
 	"strings"
 	"time"
 
+	"butler/internal/action"
 	"butler/internal/model"
+	"butler/internal/notify"
 	"butler/internal/schedule"
 )
 
-type Plan struct {
-	Children []PlanNode
-}
-
 type PlanNode struct {
-	Title        string
-	Body         string
-	Once         string
-	Solar        string
-	Lunar        string
-	Cron         string
-	NotifyOffset []string
-	Channels     []string
-	Children     []PlanNode
+	Title         string
+	Body          string
+	Once          string
+	Solar         string
+	Lunar         string
+	Cron          string
+	CommandAction *action.CommandAction
+	NotifyAction  *action.NotifyAction
+	TriggerOffset []string
+	Children      []PlanNode
+	LastFired     time.Time
 }
 
-func (plan Plan) PrintTree() error {
+func (plan PlanNode) PrintTree() error {
 	var walk func(planNode PlanNode, depth int, isLast bool) error
 	walk = func(planNode PlanNode, depth int, isLast bool) error {
 		if len(planNode.Children) > 0 {
@@ -37,7 +37,7 @@ func (plan Plan) PrintTree() error {
 				}
 			}
 		} else {
-			node, err := planNode.toNode([]string{})
+			node, err := planNode.toNode()
 			if err != nil {
 				return err
 			}
@@ -68,11 +68,12 @@ func (plan Plan) PrintTree() error {
 	return nil
 }
 
-func (planNode PlanNode) toNode(channels []string) (model.Node, error) {
+func (planNode PlanNode) toNode() (model.Node, error) {
 	if planNode.Title == "" && planNode.Body == "" {
 		return model.Node{}, fmt.Errorf("title and body can not both be empty")
 	}
-	var result schedule.Schedule
+	var scheduleResult schedule.Schedule
+	var actionResult action.Action
 	var err error
 	switch {
 	case planNode.Once != "":
@@ -81,8 +82,8 @@ func (planNode PlanNode) toNode(channels []string) (model.Node, error) {
 			return model.Node{}, err
 		}
 		once := schedule.Once{At: t}
-		result = once
-		//return once, nil
+		scheduleResult = once
+		// return once, nil
 	case planNode.Lunar != "":
 		t, err := time.Parse("01-02 15:04:05", planNode.Lunar)
 		if err != nil {
@@ -95,8 +96,8 @@ func (planNode PlanNode) toNode(channels []string) (model.Node, error) {
 			Minute: t.Minute(),
 			Second: t.Second(),
 		}
-		result = lunar
-		//return lunar, nil
+		scheduleResult = lunar
+		// return lunar, nil
 	case planNode.Solar != "":
 		t, err := time.Parse("01-02 15:04:05", planNode.Solar)
 		if err != nil {
@@ -109,43 +110,53 @@ func (planNode PlanNode) toNode(channels []string) (model.Node, error) {
 			Minute: t.Minute(),
 			Second: t.Second(),
 		}
-		result = solar
-		//return solar, nil
+		scheduleResult = solar
+		// return solar, nil
 	case planNode.Cron != "":
 		cron, err := schedule.NewCronSchedule(planNode.Cron)
 		if err != nil {
 			return model.Node{}, err
 		}
-		result = cron
-		//return cron, nil
+		scheduleResult = cron
+		// return cron, nil
+
 	default:
 		return model.Node{}, fmt.Errorf("no valid schedule configured")
 	}
-	if len(planNode.NotifyOffset) > 0 {
-		result, err = toOffsetSchedule(result, planNode.NotifyOffset)
+	switch {
+	case planNode.CommandAction != nil:
+		actionResult = planNode.CommandAction
+	case planNode.NotifyAction != nil:
+		planNode.NotifyAction.Message = notify.Message{
+			Title: planNode.Title,
+			Body:  planNode.Body,
+		}
+		actionResult = planNode.NotifyAction
+	default:
+		return model.Node{}, fmt.Errorf("no valid action configured")
+	}
+	if len(planNode.TriggerOffset) > 0 {
+		scheduleResult, err = toOffsetSchedule(scheduleResult, planNode.TriggerOffset)
 		if err != nil {
 			return model.Node{}, err
 		}
 	}
 	node := model.Node{
-		Title:    planNode.Title,
-		Body:     planNode.Body,
-		Channels: channels,
-		Schedule: result,
+		Title:     planNode.Title,
+		Body:      planNode.Body,
+		Action:    actionResult,
+		Schedule:  scheduleResult,
+		LastFired: planNode.LastFired,
 	}
 
 	return node, nil
 }
 
-func KnownChannels() []string {
-	return []string{"system", "mqtt", "email", "messagebox"}
-}
-
-func (plan Plan) ValidatePlan(known map[string]bool) []error {
+func (plan PlanNode) ValidatePlan() []error {
 	errs := []error{}
 
-	var walk func(planNode PlanNode, title string, channels []string)
-	walk = func(planNode PlanNode, title string, channels []string) {
+	var walk func(planNode PlanNode, title string)
+	walk = func(planNode PlanNode, title string) {
 		if title == "" {
 			errs = append(errs, fmt.Errorf("[%s] has a empty title,oh you do not know which node is?JUST WRITE TITLE", title))
 			return
@@ -170,27 +181,28 @@ func (plan Plan) ValidatePlan(known map[string]bool) []error {
 		default:
 			break
 		}
-
-		effective := planNode.Channels
-		if len(effective) == 0 {
-			effective = channels
-		}
-		for _, ch := range effective {
-			if _, ok := known[ch]; !ok {
-				errs = append(errs, fmt.Errorf("[%s] unknown channel %q", title, ch))
+		if planNode.NotifyAction != nil {
+			channels := planNode.NotifyAction.Channels
+			if len(channels) == 0 {
+				errs = append(errs, fmt.Errorf("%s no channel configed", title))
+			}
+			for _, ch := range planNode.NotifyAction.Channels {
+				if _, ok := notify.ParseChannel(ch); !ok {
+					errs = append(errs, fmt.Errorf("[%s] unknown channel %q", title, ch))
+				}
 			}
 		}
 		if hasChild {
 			for _, child := range planNode.Children {
-				walk(child, planNode.Title+"/"+child.Title, effective)
+				walk(child, planNode.Title+"/"+child.Title)
 			}
 		} else {
-			if len(effective) == 0 {
+			if planNode.NotifyAction != nil && len(planNode.NotifyAction.Channels) > 0 {
 				errs = append(errs, fmt.Errorf("[%s] node and its parent has no channel configured", title))
 			}
 		}
 		if validExpressionCount == 1 {
-			_, err := planNode.toNode(effective)
+			_, err := planNode.toNode()
 			if err != nil {
 				errs = append(errs, fmt.Errorf("[%s]'s schedule expression is invalid", title))
 			}
@@ -198,7 +210,7 @@ func (plan Plan) ValidatePlan(known map[string]bool) []error {
 	}
 	// 遍历所有子节点
 	for _, child := range plan.Children {
-		walk(child, child.Title, child.Channels)
+		walk(child, child.Title)
 	}
 	return errs
 }

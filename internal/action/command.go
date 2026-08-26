@@ -3,6 +3,7 @@ package action
 import (
 	"context"
 	"fmt"
+	"log"
 	"os"
 	"os/exec"
 
@@ -16,7 +17,12 @@ type CommandAction struct {
 	Env     map[string]string
 }
 
-func (a *CommandAction) Execute(ctx context.Context, message notify.Message) error {
+func (a CommandAction) Execute(ctx context.Context, messageChannel chan<- notify.Request) error {
+	var err error
+	request := notify.Request{
+		Channels: []string{notify.ChannelMQTT.String()},
+	}
+
 	if a.Command == "" {
 		return fmt.Errorf("command program is empty")
 	}
@@ -31,16 +37,19 @@ func (a *CommandAction) Execute(ctx context.Context, message notify.Message) err
 	for key, value := range a.Env {
 		cmd.Env = append(cmd.Env, key+"="+value)
 	}
-
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		return fmt.Errorf(
 			"execute %q: %w\noutput:\n%s",
 			a.Command,
 			err,
-			output,
-		)
+			output)
 	}
-
+	if len(output) > 0 {
+		log.Printf("%s", output)
+		request.Message.Title = fmt.Sprintf("command %s execute result", a.Command)
+		request.Message.Body = string(output)
+		messageChannel <- request
+	}
 	return nil
 }

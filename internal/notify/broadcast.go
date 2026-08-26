@@ -4,10 +4,31 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
 	"sync"
 )
 
-func Broadcast(ctx context.Context, registry *Registry, channels []string, message Message) error {
+type Request struct {
+	Channels []string
+	Message  Message
+}
+
+func MessageLoop(ctx context.Context, registry *Registry, requests <-chan Request) {
+	for {
+		select {
+		case request := <-requests:
+			var err error
+			err = broadcast(ctx, registry, request.Channels, request.Message)
+			if err != nil {
+				log.Printf("fail to broadcast message: %v", err)
+			}
+		case <-ctx.Done():
+			return
+		}
+	}
+}
+
+func broadcast(ctx context.Context, registry *Registry, channels []string, message Message) error {
 	var wg sync.WaitGroup
 	errs := make(chan error, len(channels))
 	for _, name := range channels {
