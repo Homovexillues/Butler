@@ -13,6 +13,15 @@ func (c Channel) String() string {
 	return string(c)
 }
 
+func AllChannels() []string {
+	return []string{
+		ChannelSystem.String(),
+		ChannelMQTT.String(),
+		ChannelEmail.String(),
+		ChannelMessageBox.String(),
+	}
+}
+
 func ParseChannel(value string) (Channel, bool) {
 	channel := Channel(value)
 	switch channel {

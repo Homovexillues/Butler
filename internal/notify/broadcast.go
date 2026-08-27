@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"sync"
 )
 
@@ -12,12 +13,17 @@ type Request struct {
 	Message  Message
 	Result   chan error
 }
+type notifyResult struct {
+	Channel string
+	Err     error
+}
 
 func MessageLoop(ctx context.Context, registry *Registry, requests <-chan Request, workers int) {
 	var wg sync.WaitGroup
 	for i := 0; i < workers; i++ {
 		wg.Add(1)
 		go func() {
+			defer wg.Done()
 			for {
 				select {
 				case request := <-requests:
@@ -34,32 +40,68 @@ func MessageLoop(ctx context.Context, registry *Registry, requests <-chan Reques
 
 func broadcast(ctx context.Context, registry *Registry, channels []string, message Message) error {
 	var wg sync.WaitGroup
-	errs := make(chan error, len(channels))
+	results := make(chan notifyResult, len(channels))
 	for _, name := range channels {
-		notifier, ok := registry.Get(name)
-		if !ok {
-			errs <- fmt.Errorf("Channel %s not register", name)
-			continue
-		}
 		wg.Add(1)
-		go func(notifier Notifier) {
+		go func(name string) {
 			defer wg.Done()
+			notifier, ok := registry.Get(name)
+			if !ok {
+				results <- notifyResult{name, fmt.Errorf("Channel %s not register", name)}
+				return
+			}
 			err := notifier.Send(ctx, message)
 			if err != nil {
-				errs <- fmt.Errorf("Fail to send message throw %s channel:\n%w",
-					notifier.Name(), err)
+				results <- notifyResult{notifier.Name(), fmt.Errorf("Fail to send message throw %s channel:\n%w",
+					notifier.Name(), err)}
+			} else {
+				results <- notifyResult{notifier.Name(), nil}
 			}
-		}(notifier)
+		}(name)
 	}
 	wg.Wait()
-	close(errs)
-	var joined []error
-	for err := range errs {
-		joined = append(joined, err)
+	close(results)
+
+	succeeded := make(map[string]bool)
+	failed := make(map[string]bool)
+	var failedError error
+	for result := range results {
+		if result.Err != nil {
+			failed[result.Channel] = false
+			failedError = errors.Join(failedError, result.Err)
+			continue
+		}
+		succeeded[result.Channel] = true
 	}
-	// 任意通知成功即为成功
-	if len(joined) < len(channels) {
+	if len(failed) == 0 {
 		return nil
 	}
-	return errors.Join(joined...)
+	reportTo := make([]string, 0, len(channels))
+	if len(succeeded) > 0 {
+		for channel := range succeeded {
+			reportTo = append(reportTo, channel)
+		}
+	} else {
+		for _, channel := range AllChannels() {
+			if !slices.Contains(channels, channel) {
+				reportTo = append(reportTo, channel)
+			}
+		}
+	}
+
+	var reportError error
+	for _, channel := range reportTo {
+		if notifier, ok := registry.Get(channel); ok {
+			if err := notifier.Send(ctx, Message{
+				Title: message.Title + "(含失败报告)",
+				Body:  message.Body + fmt.Sprintf("\n%s", failedError.Error()),
+			}); err != nil {
+				reportError = errors.Join(reportError, err)
+			}
+		}
+	}
+	if len(succeeded) == 0 {
+		return errors.Join(failedError, reportError)
+	}
+	return nil
 }
