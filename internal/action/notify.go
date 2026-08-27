@@ -15,10 +15,14 @@ func (a NotifyAction) Execute(ctx context.Context, requests chan<- notify.Reques
 	request := notify.Request{
 		Channels: a.Channels,
 		Message:  a.Message,
+		Result:   make(chan error, 1),
 	}
 	select {
 	case requests <- request:
-		return nil
+		select {
+		case err := <-request.Result:
+			return err
+		}
 	case <-ctx.Done():
 		return ctx.Err()
 	}

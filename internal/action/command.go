@@ -17,10 +17,10 @@ type CommandAction struct {
 	Env     map[string]string
 }
 
-func (a CommandAction) Execute(ctx context.Context, messageChannel chan<- notify.Request) error {
-	var err error
+func (a CommandAction) Execute(ctx context.Context, requests chan<- notify.Request) error {
 	request := notify.Request{
 		Channels: []string{notify.ChannelMQTT.String()},
+		Result:   make(chan error, 1),
 	}
 
 	if a.Command == "" {
@@ -50,7 +50,11 @@ func (a CommandAction) Execute(ctx context.Context, messageChannel chan<- notify
 		request.Message.Title = fmt.Sprintf("command %s execute result", a.Command)
 		request.Message.Body = string(output)
 		select {
-		case messageChannel <- request:
+		case requests <- request:
+			select {
+			case err := <-request.Result:
+				return err
+			}
 		case <-ctx.Done():
 			return nil
 		}

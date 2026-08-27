@@ -44,10 +44,10 @@ func (p *program) Start(s service.Service) error {
 
 	registry := buildRegistry(cfg)
 
-	requests := make(chan notify.Request, 1)
+	requests := make(chan notify.Request, 10)
 
 	ctx, cancel := context.WithCancel(context.Background())
-	go notify.MessageLoop(ctx, registry, requests)
+	go notify.MessageLoop(ctx, registry, requests, 4)
 	p.cancel = cancel
 
 	p.server = &http.Server{

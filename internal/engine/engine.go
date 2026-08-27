@@ -60,18 +60,6 @@ func Run(ctx context.Context, nodes []*model.Node, requests chan<- notify.Reques
 					result.Node.Title,
 					result.Err,
 				)
-				request := notify.Request{
-					Channels: []string{notify.ChannelMQTT.String()},
-					Message: notify.Message{
-						Title: "fail to execute action",
-						Body:  result.Err.Error(),
-					},
-				}
-				select {
-				case requests <- request:
-				case <-ctx.Done():
-					return
-				}
 				continue
 			}
 			*result.Node.LastFired = time.Now()

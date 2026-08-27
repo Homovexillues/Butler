@@ -4,27 +4,32 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log"
 	"sync"
 )
 
 type Request struct {
 	Channels []string
 	Message  Message
+	Result   chan error
 }
 
-func MessageLoop(ctx context.Context, registry *Registry, requests <-chan Request) {
-	for {
-		select {
-		case request := <-requests:
-			err := broadcast(ctx, registry, request.Channels, request.Message)
-			if err != nil {
-				log.Printf("fail to broadcast message: %v", err)
+func MessageLoop(ctx context.Context, registry *Registry, requests <-chan Request, workers int) {
+	var wg sync.WaitGroup
+	for i := 0; i < workers; i++ {
+		wg.Add(1)
+		go func() {
+			for {
+				select {
+				case request := <-requests:
+					err := broadcast(ctx, registry, request.Channels, request.Message)
+					request.Result <- err
+				case <-ctx.Done():
+					return
+				}
 			}
-		case <-ctx.Done():
-			return
-		}
+		}()
 	}
+	wg.Wait()
 }
 
 func broadcast(ctx context.Context, registry *Registry, channels []string, message Message) error {
@@ -51,6 +56,10 @@ func broadcast(ctx context.Context, registry *Registry, channels []string, messa
 	var joined []error
 	for err := range errs {
 		joined = append(joined, err)
+	}
+	// 任意通知成功即为成功
+	if len(joined) < len(channels) {
+		return nil
 	}
 	return errors.Join(joined...)
 }
