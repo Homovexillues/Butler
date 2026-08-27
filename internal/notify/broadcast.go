@@ -17,8 +17,7 @@ func MessageLoop(ctx context.Context, registry *Registry, requests <-chan Reques
 	for {
 		select {
 		case request := <-requests:
-			var err error
-			err = broadcast(ctx, registry, request.Channels, request.Message)
+			err := broadcast(ctx, registry, request.Channels, request.Message)
 			if err != nil {
 				log.Printf("fail to broadcast message: %v", err)
 			}

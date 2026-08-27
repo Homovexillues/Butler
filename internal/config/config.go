@@ -77,7 +77,7 @@ func LoadPlan() (*parser.PlanNode, error) {
 	if err != nil {
 		return nil, err
 	}
-	planPath := filepath.Join(configDir, "plan-new.jsonc")
+	planPath := filepath.Join(configDir, "plan.jsonc")
 	err = ensureFile(planPath, EveryoneReadAndOwnerWrite)
 	if err != nil {
 		return nil, err
@@ -94,7 +94,7 @@ func SavePlan(plan *parser.PlanNode) error {
 	if err != nil {
 		return err
 	}
-	planPath := filepath.Join(configDir, "plan-new.jsonc")
+	planPath := filepath.Join(configDir, "plan.jsonc")
 	data, err := json.MarshalIndent(plan, "", " ")
 	if err != nil {
 		return fmt.Errorf("marshal plan:%w", err)

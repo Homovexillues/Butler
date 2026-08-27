@@ -45,8 +45,6 @@ func Run(ctx context.Context, nodes []*model.Node, requests chan<- notify.Reques
 
 		select {
 		case <-timeChannel:
-			// todo: 用发送标志而非时序判断发送
-			// 这是个临时做法，正确做法其实是在node上打标，不过现在MVP就先这么做着
 			if !time.Now().Before(soonest) {
 				running[target] = true
 				startAction(ctx, target, soonest, requests, results)
@@ -62,12 +60,17 @@ func Run(ctx context.Context, nodes []*model.Node, requests chan<- notify.Reques
 					result.Node.Title,
 					result.Err,
 				)
-				requests <- notify.Request{
+				request := notify.Request{
 					Channels: []string{notify.ChannelMQTT.String()},
 					Message: notify.Message{
 						Title: "fail to execute action",
 						Body:  result.Err.Error(),
 					},
+				}
+				select {
+				case requests <- request:
+				case <-ctx.Done():
+					return
 				}
 				continue
 			}

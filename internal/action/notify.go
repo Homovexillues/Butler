@@ -11,13 +11,13 @@ type NotifyAction struct {
 	Message  notify.Message `json:"-"`
 }
 
-func (a NotifyAction) Execute(ctx context.Context, messageChannel chan<- notify.Request) error {
+func (a NotifyAction) Execute(ctx context.Context, requests chan<- notify.Request) error {
 	request := notify.Request{
 		Channels: a.Channels,
 		Message:  a.Message,
 	}
 	select {
-	case messageChannel <- request:
+	case requests <- request:
 		return nil
 	case <-ctx.Done():
 		return ctx.Err()

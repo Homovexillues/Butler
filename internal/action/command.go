@@ -49,7 +49,11 @@ func (a CommandAction) Execute(ctx context.Context, messageChannel chan<- notify
 		log.Printf("%s", output)
 		request.Message.Title = fmt.Sprintf("command %s execute result", a.Command)
 		request.Message.Body = string(output)
-		messageChannel <- request
+		select {
+		case messageChannel <- request:
+		case <-ctx.Done():
+			return nil
+		}
 	}
 	return nil
 }
