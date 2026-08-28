@@ -3,7 +3,7 @@ package engine
 
 import (
 	"context"
-	"log"
+	"log/slog"
 	"time"
 
 	"butler/internal/model"
@@ -55,16 +55,12 @@ func Run(ctx context.Context, nodes []*model.Node, requests chan<- notify.Reques
 			}
 			delete(running, result.Node)
 			if result.Err != nil {
-				log.Printf(
-					"action %q failed: %v",
-					result.Node.Title,
-					result.Err,
-				)
+				slog.Error("action failed", "action", result.Node.Title, "failed", "error", result.Err)
 				continue
 			}
 			*result.Node.LastFired = time.Now()
 			if err := saveState(); err != nil {
-				log.Printf("fail to save state: %v", err)
+				slog.ErrorContext(ctx, "fail to save state", "error", err)
 			}
 		case <-ctx.Done():
 			if timer != nil {

@@ -1,20 +1,15 @@
 package main
 
 import (
-	"log"
+	"log/slog"
+	"os"
 
 	"butler/internal/cli"
-
-	"github.com/6tail/lunar-go/calendar"
 )
 
 func main() {
-	cli.Execute()
-}
-
-func lunar() {
-	lunar := calendar.NewLunarFromYmd(2026, 4, 24)
-	solar := lunar.GetSolar()
-	log.Println("any time sir ~")
-	log.Println(solar.ToYmd())
+	if err := cli.Execute(); err != nil {
+		slog.Error("fail to execute butler command", "error", err)
+		os.Exit(1)
+	}
 }

@@ -2,8 +2,6 @@
 package cli
 
 import (
-	"log"
-
 	"github.com/spf13/cobra"
 )
 
@@ -12,8 +10,7 @@ var rootCmd = &cobra.Command{
 	Short: "A cyber butler which can scheduled notify",
 }
 
-func Execute() {
-	if err := rootCmd.Execute(); err != nil {
-		log.Fatalf("Fail to execute butler command:%s", err.Error())
-	}
+func Execute() error {
+	err := rootCmd.Execute()
+	return err
 }

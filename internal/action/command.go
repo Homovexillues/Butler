@@ -3,7 +3,7 @@ package action
 import (
 	"context"
 	"fmt"
-	"log"
+	"log/slog"
 	"os"
 	"os/exec"
 
@@ -46,7 +46,7 @@ func (a CommandAction) Execute(ctx context.Context, requests chan<- notify.Reque
 			output)
 	}
 	if len(output) > 0 {
-		log.Printf("%s", output)
+		slog.Info("command", a.Command, "output", string(output))
 		request.Message.Title = fmt.Sprintf("command %s execute result", a.Command)
 		request.Message.Body = string(output)
 		select {

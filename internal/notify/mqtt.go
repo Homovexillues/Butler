@@ -6,7 +6,7 @@ import (
 	"crypto/x509"
 	"encoding/json"
 	"fmt"
-	"log"
+	"log/slog"
 	"os"
 	"time"
 
@@ -66,13 +66,13 @@ func NewMqttNotifier(broker string, topic string, username string, password stri
 	opts.SetConnectionNotificationHandler(func(_ mqtt.Client, event mqtt.ConnectionNotification) {
 		switch e := event.(type) {
 		case mqtt.ConnectionNotificationConnecting:
-			log.Printf("mqtt connecting,attempt=%d reconnect=%v,", e.Attempt, e.IsReconnect)
+			slog.Debug("mqtt connecting", "attempt", e.Attempt, "reconnect", e.IsReconnect)
 		case mqtt.ConnectionNotificationConnected:
-			log.Printf("mqtt broker connected")
+			slog.Info("mqtt broker connected")
 		case mqtt.ConnectionNotificationFailed:
-			log.Printf("mqtt connection failed: %v", e.Reason)
+			slog.Warn("mqtt connection failed", "error", e.Reason)
 		case mqtt.ConnectionNotificationLost:
-			log.Printf("mqtt connection lost: %v", e.Reason)
+			slog.Warn("mqtt connection lost", "error", e.Reason)
 		}
 	})
 

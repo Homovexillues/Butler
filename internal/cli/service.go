@@ -2,11 +2,15 @@ package cli
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"io"
 	"log"
+	"log/slog"
 	"net/http"
 	"os"
 	"os/user"
+	"path/filepath"
 	"runtime"
 	"time"
 
@@ -16,18 +20,28 @@ import (
 	"butler/internal/notify"
 	"butler/internal/parser"
 
+	"github.com/gookit/rotatefile"
 	"github.com/kardianos/service"
 )
 
 type program struct {
-	cancel context.CancelFunc
-	server *http.Server
+	cancel   context.CancelFunc
+	server   *http.Server
+	closeLog func() error
 }
 
 var svc service.Service
 
 func (p *program) Start(s service.Service) error {
-	ensureHome()
+	err := ensureHome()
+	if err != nil {
+		return fmt.Errorf("fail to ensure home directory:\n%w", err)
+	}
+	closeFn, err := setupLogger()
+	if err != nil {
+		return fmt.Errorf("fail to setup logger:\n%w", err)
+	}
+	p.closeLog = closeFn
 	cfg, err := config.LoadConfig()
 	if err != nil {
 		return fmt.Errorf("fail to load config:\n%w", err)
@@ -57,8 +71,12 @@ func (p *program) Start(s service.Service) error {
 	}
 	go func() {
 		err := p.server.ListenAndServe()
-		if err != nil {
-			log.Printf("HTTP server stopped:%v", err)
+		switch {
+		case errors.Is(err, http.ErrServerClosed):
+			slog.Info("HTTP server stopped")
+		case err != nil:
+			slog.Error("HTTP server failed", "error", err)
+
 		}
 	}()
 
@@ -71,30 +89,34 @@ func (p *program) Stop(s service.Service) error {
 	if p.cancel != nil {
 		p.cancel()
 	}
-	if p.server == nil {
-		return nil
+	if p.server != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		_ = p.server.Shutdown(ctx)
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	return p.server.Shutdown(ctx)
+	if p.closeLog != nil {
+		return p.closeLog()
+	}
+	return nil
 }
 
 // 在用systemd启动的场景下，
 // 往往会因为不加载全部的环境变量而找不到HOME,
 // 而配置文件就依靠这个环境变量
-func ensureHome() {
+func ensureHome() error {
 	if runtime.GOOS == "windows" {
-		return
+		return nil
 	}
 	if os.Getenv("HOME") != "" {
-		return
+		return nil
 	}
 	if u, err := user.Current(); err == nil && u.HomeDir != "" {
 		err := os.Setenv("HOME", u.HomeDir)
 		if err != nil {
-			log.Printf("%s", err.Error())
+			return err
 		}
 	}
+	return nil
 }
 
 func newService(userName string) (service.Service, error) {
@@ -106,6 +128,38 @@ func newService(userName string) (service.Service, error) {
 		UserName:    userName, // 空字符串时 kardianos 不写 User=
 	}
 	return service.New(&program{}, cfg)
+}
+
+func setupLogger() (closeFn func() error, err error) {
+	configDir, err := os.UserConfigDir()
+	if err != nil {
+		return nil, err
+	}
+	logPath := filepath.Join(configDir, "butler", "logs", "butler.log")
+	fileWriter, err := rotatefile.NewConfig(logPath,
+		func(c *rotatefile.Config) {
+			// 每天分割日志
+			c.RotateTime = rotatefile.EveryDay
+			c.MaxSize = 50 * rotatefile.OneMByte
+			c.BackupNum = 30
+			c.BackupTime = 24 * 30
+			c.Compress = true
+			c.RotateMode = rotatefile.ModeCreate
+		},
+	).Create()
+	if err != nil {
+		return nil, err
+	}
+	writer := io.MultiWriter(os.Stderr, fileWriter)
+	handler := slog.NewTextHandler(
+		writer,
+		&slog.HandlerOptions{
+			Level:     slog.LevelInfo,
+			AddSource: true,
+		},
+	)
+	slog.SetDefault(slog.New(handler))
+	return fileWriter.Close, nil
 }
 
 func init() {

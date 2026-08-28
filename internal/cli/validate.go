@@ -2,7 +2,6 @@ package cli
 
 import (
 	"fmt"
-	"log"
 
 	"butler/internal/config"
 
@@ -12,22 +11,23 @@ import (
 var validateCmd = &cobra.Command{
 	Use:   "validate",
 	Short: "验证配置文件语法",
-	Run: func(cmd *cobra.Command, args []string) {
+	RunE: func(cmd *cobra.Command, args []string) error {
 		var errs []error
 		cfg, err := config.LoadConfig()
 		if err != nil {
-			log.Fatalf("fail to load config:\n%s", err.Error())
+			return fmt.Errorf("fail to load config:\n%w", err)
 		}
 		errs = cfg.ValidateConfig()
 		plan, err := config.LoadPlan()
 		if err != nil {
-			log.Fatalf("fail to load plan:\n%s", err.Error())
+			return fmt.Errorf("fail to load plan:\n%w", err)
 		}
 		errs = append(errs, plan.ValidatePlan()...)
 		for _, err := range errs {
-			log.Fatalf("%s\n", err.Error())
+			return fmt.Errorf("%w\n", err)
 		}
 		fmt.Printf("Perfect!")
+		return nil
 	},
 }
 

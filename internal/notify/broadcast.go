@@ -97,6 +97,8 @@ func broadcast(ctx context.Context, registry *Registry, channels []string, messa
 				Body:  message.Body + fmt.Sprintf("\n%s", failedError.Error()),
 			}); err != nil {
 				reportError = errors.Join(reportError, err)
+			} else {
+				succeeded[channel] = true
 			}
 		}
 	}
