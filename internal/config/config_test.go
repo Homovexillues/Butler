@@ -61,7 +61,7 @@ func TestSavePlan_原子写入并能重新加载状态(t *testing.T) {
 		t.Fatalf("未执行任务的 LastFired = %s，期望零值", loaded.Children[1].LastFired)
 	}
 
-	planPath := filepath.Join(configRoot, "butler", "plan-new.jsonc")
+	planPath := filepath.Join(configRoot, "butler", "plan.jsonc")
 	raw, err := os.ReadFile(planPath)
 	if err != nil {
 		t.Fatalf("读取保存后的计划文件：%v", err)

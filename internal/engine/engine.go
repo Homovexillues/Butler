@@ -55,7 +55,7 @@ func Run(ctx context.Context, nodes []*model.Node, requests chan<- notify.Reques
 			}
 			delete(running, result.Node)
 			if result.Err != nil {
-				slog.Error("action failed", "action", result.Node.Title, "failed", "error", result.Err)
+				slog.Error("action failed", "action", result.Node.Title, "error", result.Err)
 				continue
 			}
 			*result.Node.LastFired = time.Now()

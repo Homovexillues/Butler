@@ -51,6 +51,9 @@ func TestRun_触发最近的Once并产生通知请求(t *testing.T) {
 		if request.Message.Title != "测试通知" {
 			t.Errorf("通知标题 = %q，期望 测试通知", request.Message.Title)
 		}
+		// NotifyAction 会等待消息循环回传发送结果。这里模拟通知成功，
+		// 否则 Engine 会一直等待 Action 完成，无法更新 LastFired。
+		request.Result <- nil
 	case <-ctx.Done():
 		t.Fatal("Action 没有在超时前产生通知请求")
 	}

@@ -106,17 +106,28 @@ func TestBroadcast(t *testing.T) {
 		reg.Register(bad)
 		reg.Register(good)
 
-		// bad 失败应该通过返回值报告，但不能影响 good。
+		// mqtt 失败后，已经成功的 email 会再收到一次失败报告。
+		// 只要失败报告成功送达，整个通知请求就视为成功。
 		err := broadcast(ctx, reg, []string{"mqtt", "email"}, msg)
-		if !errors.Is(err, bad.failWith) {
-			t.Fatalf("broadcast 错误 = %v，期望包含 %v", err, bad.failWith)
+		if err != nil {
+			t.Fatalf("已有渠道成功并收到失败报告，broadcast 不应返回错误：%v", err)
 		}
 
 		if bad.callCount() != 1 {
 			t.Errorf("失败渠道也应被调用 1 次，得到 %d", bad.callCount())
 		}
-		if good.callCount() != 1 {
-			t.Errorf("正常渠道应照常发送 1 次，得到 %d（说明被失败渠道拖累了）", good.callCount())
+		if good.callCount() != 2 {
+			t.Errorf("正常渠道应收到原消息和失败报告，共 2 次，得到 %d", good.callCount())
+		}
+		if len(good.gotMsgs) != 2 {
+			t.Fatalf("email 收到 %d 条消息，期望 2 条", len(good.gotMsgs))
+		}
+		failureReport := good.gotMsgs[1]
+		if failureReport.Title != msg.Title+"(含失败报告)" {
+			t.Errorf("失败报告标题 = %q，期望 %q", failureReport.Title, msg.Title+"(含失败报告)")
+		}
+		if failureReport.Body == msg.Body {
+			t.Error("失败报告正文没有包含渠道错误")
 		}
 	})
 
@@ -125,13 +136,44 @@ func TestBroadcast(t *testing.T) {
 		reg := NewRegistry()
 		reg.Register(good)
 
-		// "bark" 没注册，应返回错误，但 "system" 仍应照常发送。
-		if err := broadcast(ctx, reg, []string{"bark", "system"}, msg); err == nil {
-			t.Fatal("包含未注册渠道时，broadcast 应返回错误")
+		// "bark" 没注册，但 system 能发送原消息和失败报告，
+		// 因此整体通知仍然成功。
+		if err := broadcast(ctx, reg, []string{"bark", "system"}, msg); err != nil {
+			t.Fatalf("system 已成功接收失败报告，不应返回错误：%v", err)
 		}
 
-		if good.callCount() != 1 {
-			t.Errorf("已注册渠道应发送 1 次，得到 %d", good.callCount())
+		if good.callCount() != 2 {
+			t.Errorf("已注册渠道应收到原消息和失败报告，共 2 次，得到 %d", good.callCount())
+		}
+	})
+
+	t.Run("原渠道全部失败_由备用渠道报告成功", func(t *testing.T) {
+		bad := &mockNotifier{name: "mqtt", failWith: errors.New("broker 挂了")}
+		fallback := &mockNotifier{name: "email"}
+		reg := NewRegistry()
+		reg.Register(bad)
+		reg.Register(fallback)
+
+		if err := broadcast(ctx, reg, []string{"mqtt"}, msg); err != nil {
+			t.Fatalf("备用 email 已成功报告错误，不应返回错误：%v", err)
+		}
+		if bad.callCount() != 1 {
+			t.Errorf("mqtt 被调用 %d 次，期望 1", bad.callCount())
+		}
+		if fallback.callCount() != 1 {
+			t.Errorf("备用 email 被调用 %d 次，期望 1", fallback.callCount())
+		}
+	})
+
+	t.Run("原渠道和备用渠道都不可用_返回错误", func(t *testing.T) {
+		brokerErr := errors.New("broker 挂了")
+		bad := &mockNotifier{name: "mqtt", failWith: brokerErr}
+		reg := NewRegistry()
+		reg.Register(bad)
+
+		err := broadcast(ctx, reg, []string{"mqtt"}, msg)
+		if !errors.Is(err, brokerErr) {
+			t.Fatalf("broadcast 错误 = %v，期望包含 %v", err, brokerErr)
 		}
 	})
 
