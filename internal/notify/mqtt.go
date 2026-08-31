@@ -26,6 +26,8 @@ const (
 func NewMqttNotifier(broker string, topic string, username string, password string, clientId string, crtFilePath string, insecure bool) (Notifier, error) {
 	opts := mqtt.NewClientOptions()
 	opts.SetConnectRetry(true)
+	opts.SetConnectRetryInterval(10 * time.Second)
+	opts.SetAutoReconnect(true)
 	tlsConfig := &tls.Config{}
 	protocol := "tcp"
 	if username != "" {
@@ -77,13 +79,7 @@ func NewMqttNotifier(broker string, topic string, username string, password stri
 	})
 
 	client := mqtt.NewClient(opts)
-	token := client.Connect()
-	if !token.WaitTimeout(connectionTimeout) {
-		return nil, fmt.Errorf("connection timeout %v", token.Error())
-	}
-	if token.Error() != nil {
-		return nil, fmt.Errorf("fail to connect broker: %v", token.Error())
-	}
+	client.Connect()
 
 	mqttNotifier := mqttNotifier{
 		Client: client,
@@ -100,6 +96,9 @@ func (mqttNotifier mqttNotifier) Send(ctx context.Context, message Message) erro
 	payload, err := json.Marshal(message)
 	if err != nil {
 		return err
+	}
+	if !mqttNotifier.Client.IsConnected() {
+		return fmt.Errorf("mqtt broker not connected")
 	}
 	token := mqttNotifier.Client.Publish(mqttNotifier.Topic, qosAtleastOnce, false, payload)
 	select {
