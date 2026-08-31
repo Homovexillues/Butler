@@ -57,6 +57,8 @@ func Run(ctx context.Context, nodes []*model.Node, requests chan<- notify.Reques
 			if result.Err != nil {
 				slog.Error("action failed", "action", result.Node.Title, "error", result.Err)
 				continue
+			} else {
+				slog.Info("action succeed", "title", result.Node.Title)
 			}
 			*result.Node.LastFired = time.Now()
 			if err := saveState(); err != nil {
