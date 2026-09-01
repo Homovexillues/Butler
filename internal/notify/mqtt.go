@@ -97,7 +97,7 @@ func (mqttNotifier mqttNotifier) Send(ctx context.Context, message Message) erro
 	if err != nil {
 		return err
 	}
-	if !mqttNotifier.Client.IsConnected() {
+	if !mqttNotifier.Client.IsConnectionOpen() {
 		return fmt.Errorf("mqtt broker not connected")
 	}
 	token := mqttNotifier.Client.Publish(mqttNotifier.Topic, qosAtleastOnce, false, payload)

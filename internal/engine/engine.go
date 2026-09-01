@@ -23,7 +23,13 @@ func Run(ctx context.Context, nodes []*model.Node, requests chan<- notify.Reques
 				continue
 			}
 			// 如果有未发的任务，优先补发
-			next, ok := node.Schedule.NextAfter(*node.LastFired)
+			var nextTime time.Time
+			if node.LastFired.IsZero() {
+				nextTime = time.Now()
+			} else {
+				nextTime = *node.LastFired
+			}
+			next, ok := node.Schedule.NextAfter(nextTime)
 			if !ok {
 				continue
 			}

@@ -18,6 +18,7 @@ type PlanNode struct {
 	Solar         string                `json:",omitempty"`
 	Lunar         string                `json:",omitempty"`
 	Cron          string                `json:",omitempty"`
+	Interval      string                `json:",omitempty"`
 	CommandAction *action.CommandAction `json:",omitempty"`
 	NotifyAction  *action.NotifyAction  `json:",omitempty"`
 	TriggerOffset []string              `json:",omitempty"`
@@ -82,7 +83,6 @@ func (planNode *PlanNode) toNode() (model.Node, error) {
 		}
 		once := schedule.Once{At: t}
 		scheduleResult = once
-		// return once, nil
 	case planNode.Lunar != "":
 		t, err := time.Parse("01-02 15:04:05", planNode.Lunar)
 		if err != nil {
@@ -96,7 +96,6 @@ func (planNode *PlanNode) toNode() (model.Node, error) {
 			Second: t.Second(),
 		}
 		scheduleResult = lunar
-		// return lunar, nil
 	case planNode.Solar != "":
 		t, err := time.Parse("01-02 15:04:05", planNode.Solar)
 		if err != nil {
@@ -110,15 +109,19 @@ func (planNode *PlanNode) toNode() (model.Node, error) {
 			Second: t.Second(),
 		}
 		scheduleResult = solar
-		// return solar, nil
 	case planNode.Cron != "":
 		cron, err := schedule.NewCronSchedule(planNode.Cron)
 		if err != nil {
 			return model.Node{}, err
 		}
 		scheduleResult = cron
-		// return cron, nil
 
+	case planNode.Interval != "":
+		interval, err := schedule.NewIntervalSchedule(planNode.Interval)
+		if err != nil {
+			return model.Node{}, err
+		}
+		scheduleResult = interval
 	default:
 		return model.Node{}, fmt.Errorf("no valid schedule configured")
 	}
@@ -164,7 +167,7 @@ func (plan PlanNode) ValidatePlan() []error {
 		hasChild := len(planNode.Children) > 0
 
 		var validExpressionCount int
-		for _, expression := range []string{planNode.Once, planNode.Lunar, planNode.Solar, planNode.Cron} {
+		for _, expression := range []string{planNode.Once, planNode.Lunar, planNode.Solar, planNode.Cron, planNode.Interval} {
 			if expression != "" {
 				validExpressionCount += 1
 			}
