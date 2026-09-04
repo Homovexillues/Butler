@@ -149,7 +149,7 @@ func setupLogger() (closeFn func() error, err error) {
 		return nil, err
 	}
 	writer := io.MultiWriter(os.Stderr, rl)
-	handler := slog.NewTextHandler(
+	handler := slog.NewJSONHandler(
 		writer,
 		&slog.HandlerOptions{
 			Level:     slog.LevelInfo,
