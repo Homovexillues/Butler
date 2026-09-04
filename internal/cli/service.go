@@ -20,8 +20,8 @@ import (
 	"butler/internal/notify"
 	"butler/internal/parser"
 
-	"github.com/gookit/rotatefile"
 	"github.com/kardianos/service"
+	rotatelogs "github.com/lestrrat-go/file-rotatelogs"
 )
 
 type program struct {
@@ -135,22 +135,20 @@ func setupLogger() (closeFn func() error, err error) {
 	if err != nil {
 		return nil, err
 	}
-	logPath := filepath.Join(configDir, "butler", "logs", "butler.log")
-	fileWriter, err := rotatefile.NewConfig(logPath,
-		func(c *rotatefile.Config) {
-			// 每天分割日志
-			c.RotateTime = rotatefile.EveryDay
-			c.MaxSize = 50 * rotatefile.OneMByte
-			c.BackupNum = 30
-			c.BackupTime = 24 * 30
-			c.Compress = true
-			c.RotateMode = rotatefile.ModeCreate
-		},
-	).Create()
+	logDir := filepath.Join(configDir, "butler", "logs")
+	if err := os.MkdirAll(logDir, 0o755); err != nil {
+		return nil, err
+	}
+
+	rl, err := rotatelogs.New(
+		filepath.Join(logDir, "%Y-%m-%d.log"),
+		rotatelogs.WithRotationTime(24*time.Hour),
+		rotatelogs.WithMaxAge(7*24*time.Hour),
+		rotatelogs.WithClock(rotatelogs.Local))
 	if err != nil {
 		return nil, err
 	}
-	writer := io.MultiWriter(os.Stderr, fileWriter)
+	writer := io.MultiWriter(os.Stderr, rl)
 	handler := slog.NewTextHandler(
 		writer,
 		&slog.HandlerOptions{
@@ -159,7 +157,7 @@ func setupLogger() (closeFn func() error, err error) {
 		},
 	)
 	slog.SetDefault(slog.New(handler))
-	return fileWriter.Close, nil
+	return rl.Close, nil
 }
 
 func init() {
