@@ -47,10 +47,15 @@ func (p *program) Start(s service.Service) error {
 		return fmt.Errorf("fail to load config:\n%w", err)
 	}
 
+	_, err = config.LoadDatabase()
+	if err != nil {
+		return fmt.Errorf("fail to load database:\n%w", err)
+	}
 	plan, err := config.LoadPlan()
 	if err != nil {
 		return fmt.Errorf("fail to load plan:\n%w", err)
 	}
+
 	nodes, err := parser.PlanToNodes(plan)
 	if err != nil {
 		return fmt.Errorf("fail to convert plan to nodes:\n%w", err)

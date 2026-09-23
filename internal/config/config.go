@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 
 	"butler/internal/parser"
+	"butler/internal/store"
 )
 
 type Config struct {
@@ -57,6 +58,19 @@ func LoadConfig() (Config, error) {
 		config.Mqtt.CertFile = filepath.Join(configDir, config.Mqtt.CertFile)
 	}
 	return config, nil
+}
+
+func LoadDatabase() (*store.Store, error) {
+	configDir, err := ensureDirectory()
+	if err != nil {
+		return nil, err
+	}
+	databasePath := filepath.Join(configDir, "butler.db")
+	butlerStore, err := store.NewStore(databasePath)
+	if err != nil {
+		return nil, err
+	}
+	return butlerStore, nil
 }
 
 func ensureDirectory() (string, error) {
