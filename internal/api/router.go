@@ -5,7 +5,7 @@ import (
 	"net/http"
 	"time"
 
-	"butler/internal/model"
+	"butler/internal/store"
 
 	"github.com/gin-gonic/gin"
 )
@@ -17,7 +17,7 @@ type taskResponse struct {
 	NextTriggeredAt *time.Time `json:"nextTriggeredAt"`
 }
 
-func NewRouter(nodes []*model.Node) *gin.Engine {
+func NewRouter(store *store.Store) *gin.Engine {
 	router := gin.Default()
 	router.GET("/ping", func(c *gin.Context) {
 		c.String(http.StatusOK, "pong")
@@ -29,15 +29,15 @@ func NewRouter(nodes []*model.Node) *gin.Engine {
 	})
 	api := router.Group("/api/v1")
 	api.GET("/tasks", func(c *gin.Context) {
-		tasks := make([]taskResponse, 0, len(nodes))
-		now := time.Now()
-		for _, node := range nodes {
+		taskRows, err := store.GetAll(c.Request.Context())
+		if err != nil {
+			c.JSON(http.StatusBadRequest, err)
+		}
+		tasks := make([]taskResponse, 0, len(taskRows))
+		for _, taskRow := range taskRows {
 			task := taskResponse{
-				Title: node.Title,
-				Body:  node.Body,
-			}
-			if next, found := node.Schedule.NextAfter(now); found {
-				task.NextTriggeredAt = &next
+				Title: taskRow.Title,
+				Body:  taskRow.Body,
 			}
 			tasks = append(tasks, task)
 		}

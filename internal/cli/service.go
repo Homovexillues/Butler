@@ -47,7 +47,7 @@ func (p *program) Start(s service.Service) error {
 		return fmt.Errorf("fail to load config:\n%w", err)
 	}
 
-	_, err = config.LoadDatabase()
+	store, err := config.LoadDatabase()
 	if err != nil {
 		return fmt.Errorf("fail to load database:\n%w", err)
 	}
@@ -71,7 +71,7 @@ func (p *program) Start(s service.Service) error {
 
 	p.server = &http.Server{
 		Addr:              ":8191",
-		Handler:           api.NewRouter(nodes),
+		Handler:           api.NewRouter(store),
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 	go func() {

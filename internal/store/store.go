@@ -88,10 +88,18 @@ func (store *Store) Update(ctx context.Context, task taskRow) error {
 	return nil
 }
 
-func (store *Store) Find(ctx context.Context, id int64) (taskRow, error) {
+func (store *Store) Get(ctx context.Context, id int64) (taskRow, error) {
 	var r taskRow
-	if err := store.db.WithContext(ctx).First("id = ?", id).Error; err != nil {
+	if err := store.db.WithContext(ctx).First(&r, id).Error; err != nil {
 		return taskRow{}, err
 	}
 	return r, nil
+}
+
+func (store *Store) GetAll(ctx context.Context) ([]taskRow, error) {
+	var rows []taskRow
+	if err := store.db.WithContext(ctx).Order("id").Find(&rows).Error; err != nil {
+		return nil, err
+	}
+	return rows, nil
 }
