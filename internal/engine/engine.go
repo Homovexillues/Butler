@@ -8,12 +8,16 @@ import (
 
 	"butler/internal/model"
 	"butler/internal/notify"
+	"butler/internal/store"
 )
 
-func Run(ctx context.Context, nodes []*model.Node, requests chan<- notify.Request, saveState func() error) {
+func Run(ctx context.Context, store *store.Store, requests chan<- notify.Request, saveState func() error) {
+	var nodes []*model.Node
 	internal := 1 * time.Minute
 	results := make(chan actionResult, 10)
 	running := make(map[*model.Node]bool)
+	changes := store.Changes()
+	// todo: 做好taskRow到Node的转换
 	for {
 		var soonest time.Time
 		var target *model.Node
@@ -50,6 +54,8 @@ func Run(ctx context.Context, nodes []*model.Node, requests chan<- notify.Reques
 		}
 
 		select {
+		case <-changes:
+			// todo: 做好taskRow到Node的转换
 		case <-timeChannel:
 			if !time.Now().Before(soonest) {
 				running[target] = true

@@ -10,7 +10,8 @@ import (
 )
 
 type Store struct {
-	db *gorm.DB
+	db      *gorm.DB
+	changes chan struct{}
 }
 
 type taskRow struct {
@@ -47,6 +48,10 @@ func NewStore(dbPath string) (*Store, error) {
 		db: db,
 	}
 	return &store, err
+}
+
+func (store *Store) Changes() <-chan struct{} {
+	return store.changes
 }
 
 func (store *Store) Close() error {
