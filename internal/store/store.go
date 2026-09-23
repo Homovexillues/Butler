@@ -2,7 +2,8 @@
 package store
 
 import (
-	"butler/internal/model"
+	"context"
+	"errors"
 
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
@@ -13,15 +14,17 @@ type Store struct {
 }
 
 type taskRow struct {
-	ID                 int64  `gorm:"column:Id;primaryKey;autoIncrement"`
-	Title              string `gorm:"column:Title;not null"`
-	Body               string `gorm:"column:Body;not null"`
-	ScheduleType       string `gorm:"column:ScheduleType;not null"`
-	ScheduleOffset     string `gorm:"column:ScheduleOffset"`
-	ScheduleExpression string `gorm:"column:ScheduleExpression;not null"`
-	ActionType         string `gorm:"column:ActionType;not null"`
-	ActionExpression   string `gorm:"column:ActionExpression;not null"`
-	LastFired          string `gorm:"column:LastFired"`
+	ID                 int64  `gorm:"column:id;primaryKey;autoIncrement"`
+	ParentID           int64  `gorm:"column:parent_id"`
+	Title              string `gorm:"column:title;not null"`
+	Body               string `gorm:"column:body;not null"`
+	ScheduleType       string `gorm:"column:schedule_type;not null"`
+	ScheduleOffset     string `gorm:"column:schedule_offset"`
+	ScheduleExpression string `gorm:"column:schedule_expression;not null"`
+	ActionType         string `gorm:"column:action_type;not null"`
+	ActionExpression   string `gorm:"column:action_expression;not null"`
+	LastFired          string `gorm:"column:last_fired"`
+	Enabled            bool   `gorm:"column:enabled"`
 }
 
 func NewStore(dbPath string) (*Store, error) {
@@ -54,8 +57,41 @@ func (store *Store) Close() error {
 	return sqlDB.Close()
 }
 
-func (store *Store) Add(node *model.Node) {
+func (store *Store) Add(ctx context.Context, task taskRow) (int64, error) {
+	if err := store.db.WithContext(ctx).Create(&task).Error; err != nil {
+		return -1, err
+	}
+	return task.ID, nil
 }
-func (store *Store) Remove() {}
-func (store *Store) Update() {}
-func (store *Store) Find()   {}
+
+func (store *Store) Remove(ctx context.Context, id int64) error {
+	res := store.db.WithContext(ctx).Where("id = ?", id).Delete(&taskRow{})
+	if res.Error != nil {
+		return res.Error
+	}
+	if res.RowsAffected == 0 {
+		return errors.New("task not found")
+	}
+	return nil
+}
+
+func (store *Store) Update(ctx context.Context, task taskRow) error {
+	res := store.db.WithContext(ctx).Model(&taskRow{}).Where("id = ?", task.ID).
+		Select("title", "body", "schedule_type", "schedule_expression",
+			"action_type", "action_config", "enabled").Updates(task)
+	if res.Error != nil {
+		return res.Error
+	}
+	if res.RowsAffected == 0 {
+		return errors.New("task not found")
+	}
+	return nil
+}
+
+func (store *Store) Find(ctx context.Context, id int64) (taskRow, error) {
+	var r taskRow
+	if err := store.db.WithContext(ctx).First("id = ?", id).Error; err != nil {
+		return taskRow{}, err
+	}
+	return r, nil
+}

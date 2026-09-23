@@ -14,6 +14,8 @@ require (
 	github.com/spf13/cobra v1.10.2
 	github.com/tailscale/hujson v0.0.0-20260302212456-ecc657c15afd
 	github.com/wneessen/go-mail v0.7.3
+	gorm.io/driver/sqlite v1.6.0
+	gorm.io/gorm v1.31.2
 )
 
 require (
@@ -66,6 +68,4 @@ require (
 	golang.org/x/sys v0.47.0 // indirect
 	golang.org/x/text v0.37.0 // indirect
 	google.golang.org/protobuf v1.36.10 // indirect
-	gorm.io/driver/sqlite v1.6.0 // indirect
-	gorm.io/gorm v1.31.2 // indirect
 )

@@ -24,7 +24,7 @@ var validateCmd = &cobra.Command{
 		}
 		errs = append(errs, plan.ValidatePlan()...)
 		for _, err := range errs {
-			return fmt.Errorf("%w\n", err)
+			return fmt.Errorf("%w", err)
 		}
 		fmt.Printf("Perfect!")
 		return nil

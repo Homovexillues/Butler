@@ -26,19 +26,19 @@ type PlanNode struct {
 	LastFired     time.Time             `json:",omitzero"`
 }
 
-func (plan PlanNode) PrintTree() error {
-	var walk func(planNode PlanNode, depth int, isLast bool) error
-	walk = func(planNode PlanNode, depth int, isLast bool) error {
-		if len(planNode.Children) > 0 {
-			fmt.Println(planNode.Title)
-			for index, child := range planNode.Children {
-				isLast := index == len(planNode.Children)-1
+func (planNode PlanNode) PrintTree() error {
+	var walk func(p PlanNode, depth int, isLast bool) error
+	walk = func(p PlanNode, depth int, isLast bool) error {
+		if len(p.Children) > 0 {
+			fmt.Println(p.Title)
+			for index, child := range p.Children {
+				isLast := index == len(p.Children)-1
 				if err := walk(child, depth+1, isLast); err != nil {
 					return err
 				}
 			}
 		} else {
-			node, err := planNode.toNode()
+			node, err := p.toNode()
 			if err != nil {
 				return err
 			}
@@ -59,8 +59,8 @@ func (plan PlanNode) PrintTree() error {
 		}
 		return nil
 	}
-	for index, child := range plan.Children {
-		isLast := index == len(plan.Children)-1
+	for index, child := range planNode.Children {
+		isLast := index == len(planNode.Children)-1
 		if err := walk(child, 0, isLast); err != nil {
 			return err
 		}
@@ -154,7 +154,7 @@ func (planNode *PlanNode) toNode() (model.Node, error) {
 	return node, nil
 }
 
-func (plan PlanNode) ValidatePlan() []error {
+func (planNode PlanNode) ValidatePlan() []error {
 	errs := []error{}
 
 	var walk func(planNode PlanNode, title string)
@@ -207,7 +207,7 @@ func (plan PlanNode) ValidatePlan() []error {
 		}
 	}
 	// 遍历所有子节点
-	for _, child := range plan.Children {
+	for _, child := range planNode.Children {
 		walk(child, child.Title)
 	}
 	return errs

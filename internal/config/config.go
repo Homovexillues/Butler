@@ -136,7 +136,12 @@ func ensureFile(path string, fileMode os.FileMode) error {
 		}
 		return err
 	}
-	defer file.Close()
+	defer func() {
+		err = file.Close()
+	}()
+	if err != nil {
+		return err
+	}
 	return nil
 }
 
