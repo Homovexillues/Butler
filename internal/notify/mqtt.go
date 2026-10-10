@@ -23,7 +23,7 @@ const (
 	connectionTimeout = 3 * time.Second
 )
 
-func NewMqttNotifier(broker string, topic string, username string, password string, clientId string, crtFilePath string, insecure bool) (Notifier, error) {
+func NewMqttNotifier(broker string, topic string, username string, password string, clientID string, crtFilePath string, insecure bool) (Notifier, error) {
 	opts := mqtt.NewClientOptions()
 	opts.SetConnectRetry(true)
 	opts.SetConnectRetryInterval(10 * time.Second)
@@ -60,10 +60,10 @@ func NewMqttNotifier(broker string, topic string, username string, password stri
 	}
 	address := protocol + "://" + broker
 	opts.AddBroker(address)
-	if clientId == "" {
-		clientId = "butler"
+	if clientID == "" {
+		clientID = "butler"
 	}
-	opts.SetClientID(clientId)
+	opts.SetClientID(clientID)
 
 	opts.SetConnectionNotificationHandler(func(_ mqtt.Client, event mqtt.ConnectionNotification) {
 		switch e := event.(type) {

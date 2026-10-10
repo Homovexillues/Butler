@@ -20,20 +20,20 @@ type notifyResult struct {
 
 func MessageLoop(ctx context.Context, registry *Registry, requests <-chan Request, workers int) {
 	var wg sync.WaitGroup
-	for i := 0; i < workers; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			for {
-				select {
-				case request := <-requests:
-					err := broadcast(ctx, registry, request.Channels, request.Message)
-					request.Result <- err
-				case <-ctx.Done():
-					return
+	for range workers {
+		wg.Go(
+			func() {
+				for {
+					select {
+					case request := <-requests:
+						err := broadcast(ctx, registry, request.Channels, request.Message)
+						request.Result <- err
+					case <-ctx.Done():
+						return
+					}
 				}
-			}
-		}()
+			},
+		)
 	}
 	wg.Wait()
 }
@@ -52,7 +52,7 @@ func broadcast(ctx context.Context, registry *Registry, channels []string, messa
 			}
 			err := notifier.Send(ctx, message)
 			if err != nil {
-				results <- notifyResult{notifier.Name(), fmt.Errorf("Fail to send message throw %s channel:\n%w",
+				results <- notifyResult{notifier.Name(), fmt.Errorf("fail to send message throw %s channel:\n%w",
 					notifier.Name(), err)}
 			} else {
 				results <- notifyResult{notifier.Name(), nil}

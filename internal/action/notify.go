@@ -19,10 +19,7 @@ func (a NotifyAction) Execute(ctx context.Context, requests chan<- notify.Reques
 	}
 	select {
 	case requests <- request:
-		select {
-		case err := <-request.Result:
-			return err
-		}
+		return <-request.Result
 	case <-ctx.Done():
 		return ctx.Err()
 	}

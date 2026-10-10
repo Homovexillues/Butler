@@ -9,6 +9,7 @@ import (
 )
 
 type Node struct {
+	ID        int64
 	Title     string
 	Body      string
 	Schedule  schedule.Schedule

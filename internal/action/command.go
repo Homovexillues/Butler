@@ -51,11 +51,8 @@ func (a CommandAction) Execute(ctx context.Context, requests chan<- notify.Reque
 		request.Message.Body = string(output)
 		select {
 		case requests <- request:
-			select {
-			case err := <-request.Result:
-				if err != nil {
-					slog.Error("command succeeded but notification failed", "command", a.Command, "error", err)
-				}
+			if err := <-request.Result; err != nil {
+				slog.Error("command succeeded but notification failed", "command", a.Command, "error", err)
 			}
 		case <-ctx.Done():
 			return ctx.Err()

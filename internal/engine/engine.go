@@ -8,16 +8,13 @@ import (
 
 	"butler/internal/model"
 	"butler/internal/notify"
-	"butler/internal/store"
 )
 
-func Run(ctx context.Context, store *store.Store, requests chan<- notify.Request, saveState func() error) {
-	var nodes []*model.Node
+func Run(ctx context.Context, nodesChannel <-chan []*model.Node, requests chan<- notify.Request, saveState func(id int64, lastFired time.Time) error) {
+	nodes := []*model.Node{}
 	internal := 1 * time.Minute
 	results := make(chan actionResult, 10)
 	running := make(map[*model.Node]bool)
-	changes := store.Changes()
-	// todo: 做好taskRow到Node的转换
 	for {
 		var soonest time.Time
 		var target *model.Node
@@ -54,8 +51,7 @@ func Run(ctx context.Context, store *store.Store, requests chan<- notify.Request
 		}
 
 		select {
-		case <-changes:
-			// todo: 做好taskRow到Node的转换
+		case nodes = <-nodesChannel:
 		case <-timeChannel:
 			if !time.Now().Before(soonest) {
 				running[target] = true
@@ -73,7 +69,7 @@ func Run(ctx context.Context, store *store.Store, requests chan<- notify.Request
 				slog.Info("action succeed", "title", result.Node.Title)
 			}
 			*result.Node.LastFired = time.Now()
-			if err := saveState(); err != nil {
+			if err := saveState(result.Node.ID, *result.Node.LastFired); err != nil {
 				slog.ErrorContext(ctx, "fail to save state", "error", err)
 			}
 		case <-ctx.Done():

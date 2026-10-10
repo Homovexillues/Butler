@@ -51,6 +51,7 @@ func (p *program) Start(s service.Service) error {
 	if err != nil {
 		return fmt.Errorf("fail to load database:\n%w", err)
 	}
+	nodesChannel := store.Changes()
 	plan, err := config.LoadPlan()
 	if err != nil {
 		return fmt.Errorf("fail to load plan:\n%w", err)
@@ -85,7 +86,9 @@ func (p *program) Start(s service.Service) error {
 		}
 	}()
 
-	go engine.Run(ctx, store, requests, func() error { return config.SavePlan(plan) })
+	go engine.Run(ctx, nodesChannel, requests, func(id int64, lastFired time.Time) error {
+		return store.MarkLastFired(ctx, id, lastFired)
+	})
 
 	return nil
 }

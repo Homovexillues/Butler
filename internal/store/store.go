@@ -4,28 +4,17 @@ package store
 import (
 	"context"
 	"errors"
+	"time"
+
+	"butler/internal/model"
 
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 )
 
 type Store struct {
-	db      *gorm.DB
-	changes chan struct{}
-}
-
-type taskRow struct {
-	ID                 int64  `gorm:"column:id;primaryKey;autoIncrement"`
-	ParentID           int64  `gorm:"column:parent_id"`
-	Title              string `gorm:"column:title;not null"`
-	Body               string `gorm:"column:body;not null"`
-	ScheduleType       string `gorm:"column:schedule_type;not null"`
-	ScheduleOffset     string `gorm:"column:schedule_offset"`
-	ScheduleExpression string `gorm:"column:schedule_expression;not null"`
-	ActionType         string `gorm:"column:action_type;not null"`
-	ActionExpression   string `gorm:"column:action_expression;not null"`
-	LastFired          string `gorm:"column:last_fired"`
-	Enabled            bool   `gorm:"column:enabled"`
+	db           *gorm.DB
+	nodesChannel chan []*model.Node
 }
 
 func NewStore(dbPath string) (*Store, error) {
@@ -41,7 +30,7 @@ func NewStore(dbPath string) (*Store, error) {
 	sqlDB.SetMaxOpenConns(1)
 	sqlDB.SetMaxIdleConns(1)
 	sqlDB.SetConnMaxIdleTime(0)
-	if err := db.AutoMigrate(&taskRow{}); err != nil {
+	if err := db.AutoMigrate(&model.Task{}); err != nil {
 		return nil, err
 	}
 	store := Store{
@@ -50,8 +39,8 @@ func NewStore(dbPath string) (*Store, error) {
 	return &store, err
 }
 
-func (store *Store) Changes() <-chan struct{} {
-	return store.changes
+func (store *Store) Changes() <-chan []*model.Node {
+	return store.nodesChannel
 }
 
 func (store *Store) Close() error {
@@ -62,7 +51,7 @@ func (store *Store) Close() error {
 	return sqlDB.Close()
 }
 
-func (store *Store) Add(ctx context.Context, task taskRow) (int64, error) {
+func (store *Store) Add(ctx context.Context, task model.Task) (int64, error) {
 	if err := store.db.WithContext(ctx).Create(&task).Error; err != nil {
 		return -1, err
 	}
@@ -70,7 +59,7 @@ func (store *Store) Add(ctx context.Context, task taskRow) (int64, error) {
 }
 
 func (store *Store) Remove(ctx context.Context, id int64) error {
-	res := store.db.WithContext(ctx).Where("id = ?", id).Delete(&taskRow{})
+	res := store.db.WithContext(ctx).Where("id = ?", id).Delete(&model.Task{})
 	if res.Error != nil {
 		return res.Error
 	}
@@ -80,10 +69,15 @@ func (store *Store) Remove(ctx context.Context, id int64) error {
 	return nil
 }
 
-func (store *Store) Update(ctx context.Context, task taskRow) error {
-	res := store.db.WithContext(ctx).Model(&taskRow{}).Where("id = ?", task.ID).
-		Select("title", "body", "schedule_type", "schedule_expression",
-			"action_type", "action_config", "enabled").Updates(task)
+func (store *Store) MarkLastFired(ctx context.Context, id int64, at time.Time) error {
+	return store.db.WithContext(ctx).Model(&model.Task{}).
+		Where("id = ?", id).Update("last_fired", at).Error
+}
+
+func (store *Store) Update(ctx context.Context, task model.Task) error {
+	res := store.db.WithContext(ctx).Model(&model.Task{}).Where("id = ?", task.ID).
+		Select("title", "body", "schedule_type", "schedule_offset", "schedule_expression",
+			"action_type", "action_expression", "channel", "enabled").Updates(task)
 	if res.Error != nil {
 		return res.Error
 	}
@@ -93,18 +87,26 @@ func (store *Store) Update(ctx context.Context, task taskRow) error {
 	return nil
 }
 
-func (store *Store) Get(ctx context.Context, id int64) (taskRow, error) {
-	var r taskRow
+func (store *Store) Get(ctx context.Context, id int64) (model.Task, error) {
+	var r model.Task
 	if err := store.db.WithContext(ctx).First(&r, id).Error; err != nil {
-		return taskRow{}, err
+		return model.Task{}, err
 	}
 	return r, nil
 }
 
-func (store *Store) GetAll(ctx context.Context) ([]taskRow, error) {
-	var rows []taskRow
+func (store *Store) GetAll(ctx context.Context) ([]model.Task, error) {
+	var rows []model.Task
 	if err := store.db.WithContext(ctx).Order("id").Find(&rows).Error; err != nil {
 		return nil, err
 	}
 	return rows, nil
+}
+
+func TaskToTaskRow(task model.Task) (model.Task, error) {
+	return model.Task{}, nil
+}
+
+func TaskRowToTask(task model.Task) (model.Task, error) {
+	return model.Task{}, nil
 }
