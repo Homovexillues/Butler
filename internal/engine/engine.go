@@ -10,66 +10,106 @@ import (
 	"butler/internal/notify"
 )
 
+func Next(nodes []*model.Node, running map[int64]bool, now time.Time) (index int, at time.Time, found bool) {
+	index = -1
+	for i, node := range nodes {
+		if node == nil || node.Schedule == nil || running[node.ID] {
+			continue
+		}
+		// 	有执行记录的时候，从上次执行时间寻找下一次触发
+		// 	没有的时候从调用方提供的时间寻找下一次触发
+		since := now
+		if node.LastFired != nil && !node.LastFired.IsZero() {
+			since = *node.LastFired
+		}
+
+		next, ok := node.Schedule.NextAfter(since)
+		if !ok {
+			continue
+		}
+
+		if !found || next.Before(at) {
+			index = i
+			at = next
+			found = true
+		}
+	}
+	return index, at, found
+}
+
 func Run(ctx context.Context, nodesChannel <-chan []*model.Node, requests chan<- notify.Request, saveState func(id int64, lastFired time.Time) error) {
 	nodes := []*model.Node{}
-	internal := 1 * time.Minute
 	results := make(chan actionResult, 10)
-	running := make(map[*model.Node]bool)
+	running := make(map[int64]bool)
 	for {
 		var soonest time.Time
-		var target *model.Node
-		// find the sonnest node to notify
-		for _, node := range nodes {
-			if running[node] {
-				continue
-			}
-			// 如果有未发的任务，优先补发
-			var nextTime time.Time
-			if node.LastFired.IsZero() {
-				nextTime = time.Now()
-			} else {
-				nextTime = *node.LastFired
-			}
-			next, ok := node.Schedule.NextAfter(nextTime)
-			if !ok {
-				continue
-			}
-			if target == nil || next.Before(soonest) {
-				soonest, target = next, node
-			}
-		}
+		now := time.Now()
+		index, soonest, found := Next(nodes, running, now)
 		var timer *time.Timer
 		var timeChannel <-chan time.Time
-		switch {
-		case target != nil:
-			duration := time.Until(soonest)
-			duration = min(duration, internal)
-			timer = time.NewTimer(duration)
+		var target *model.Node
+		if found {
+			target = nodes[index]
+			timer = time.NewTimer(max(time.Duration(0), soonest.Sub(now)))
 			timeChannel = timer.C
-		case len(running) == 0:
-			return
 		}
 
 		select {
-		case nodes = <-nodesChannel:
+		case newNodes, ok := <-nodesChannel:
+			if !ok {
+				nodesChannel = nil
+				break
+			}
+			// 在更新节点的时候保持已经开始执行过的任务的目标节点
+			// 因为之前是直接加载配置文件来修改节点的，但是现在要热重载，所以要保留状态
+			anchor := time.Now()
+			nextNodes := make([]*model.Node, 0, len(nodes))
+			for _, newNode := range newNodes {
+				if newNode == nil {
+					continue
+				}
+				node := *newNode
+				fired := anchor
+				if newNode.LastFired != nil && !newNode.LastFired.IsZero() {
+					fired = *newNode.LastFired
+				} else {
+					for _, old := range nodes {
+						if old.ID == node.ID && old.LastFired != nil {
+							fired = *old.LastFired
+							break
+						}
+					}
+				}
+				node.LastFired = &fired
+				nextNodes = append(nextNodes, &node)
+			}
+			nodes = nextNodes
 		case <-timeChannel:
 			if !time.Now().Before(soonest) {
-				running[target] = true
+				running[target.ID] = true
 				startAction(ctx, target, soonest, requests, results)
 			}
 		case result := <-results:
 			if timer != nil {
 				timer.Stop()
 			}
-			delete(running, result.Node)
+			delete(running, result.Node.ID)
 			if result.Err != nil {
 				slog.Error("action failed", "action", result.Node.Title, "error", result.Err)
 				continue
 			} else {
 				slog.Info("action succeed", "title", result.Node.Title)
 			}
-			*result.Node.LastFired = time.Now()
-			if err := saveState(result.Node.ID, *result.Node.LastFired); err != nil {
+
+			fired := result.FinishedAt
+			for _, node := range nodes {
+				if node.ID == result.Node.ID {
+					node.LastFired = &fired
+					break
+				}
+			}
+
+			if err := saveState(result.Node.ID, fired); err != nil {
 				slog.ErrorContext(ctx, "fail to save state", "error", err)
 			}
 		case <-ctx.Done():

@@ -10,7 +10,9 @@ import (
 	"strings"
 	"time"
 
+	"butler/internal/action"
 	"butler/internal/model"
+	"butler/internal/notify"
 	"butler/internal/schedule"
 
 	"github.com/tailscale/hujson"
@@ -30,6 +32,88 @@ func Parse[T any](path string) (T, error) {
 		return result, err
 	}
 	return result, json.Unmarshal(stdJSONData, &result)
+}
+
+func TaskToNode(task model.Task) (model.Node, error) {
+	var node model.Node
+	var taskSchedule schedule.Schedule
+	var taskAction action.Action
+	switch task.ScheduleType {
+	case schedule.ScheduleOnce:
+		at, err := time.Parse("2006-01-01 15:04:05", task.ScheduleExpression)
+		if err != nil {
+			return node, err
+		}
+		taskSchedule = schedule.Once{
+			At: at,
+		}
+	case schedule.ScheduleSolar:
+		at, err := time.Parse("2006-01-01 15:04:05", task.ScheduleExpression)
+		if err != nil {
+			return node, err
+		}
+		taskSchedule = schedule.SolarAnnual{
+			Month:  int(at.Month()),
+			Day:    at.Day(),
+			Hour:   at.Hour(),
+			Minute: at.Minute(),
+			Second: at.Second(),
+		}
+	case schedule.ScheduleLunar:
+		at, err := time.Parse("2006-01-01 15:04:05", task.ScheduleExpression)
+		if err != nil {
+			return node, err
+		}
+		taskSchedule = schedule.LunarSchedule{
+			Month:  int(at.Month()),
+			Day:    at.Day(),
+			Hour:   at.Hour(),
+			Minute: at.Minute(),
+			Second: at.Second(),
+		}
+	case schedule.ScheduleCron:
+		cronSchedule, err := schedule.NewCronSchedule(task.ScheduleExpression)
+		if err != nil {
+			return node, err
+		}
+		taskSchedule = cronSchedule
+	case schedule.ScheduleInterval:
+		intervalSchedule, err := schedule.NewIntervalSchedule(task.ScheduleExpression)
+		if err != nil {
+			return node, err
+		}
+		taskSchedule = intervalSchedule
+	default:
+		return node, fmt.Errorf("unknown schedule type %q", task.ScheduleType)
+	}
+	switch task.ActionType {
+	case action.ActionNotify:
+		notifyAction := action.NotifyAction{
+			Channels: task.Channels,
+			Message: notify.Message{
+				Title: task.Title,
+				Body:  task.Body,
+			},
+		}
+		taskAction = notifyAction
+	case action.ActionCommand:
+		var commandAction action.CommandAction
+		if err := json.Unmarshal(task.ActionExpression, commandAction); err != nil {
+			return node, err
+		}
+		taskAction = commandAction
+	default:
+		return node, fmt.Errorf("unknown action type %q", task.ActionType)
+	}
+	node = model.Node{
+		ID:        task.ID,
+		Title:     task.Title,
+		Body:      task.Body,
+		Schedule:  taskSchedule,
+		Action:    taskAction,
+		LastFired: task.LastFired,
+	}
+	return node, nil
 }
 
 func PlanToNodes(plan *PlanNode) ([]*model.Node, error) {

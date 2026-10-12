@@ -189,7 +189,7 @@ func (planNode PlanNode) ValidatePlan() []error {
 				errs = append(errs, fmt.Errorf("%s no channel configed", title))
 			}
 			for _, ch := range planNode.NotifyAction.Channels {
-				if _, ok := notify.ParseChannel(ch); !ok {
+				if _, ok := notify.ParseChannel(ch.String()); !ok {
 					errs = append(errs, fmt.Errorf("[%s] unknown channel %q", title, ch))
 				}
 			}

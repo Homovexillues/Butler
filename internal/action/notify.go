@@ -7,13 +7,17 @@ import (
 )
 
 type NotifyAction struct {
-	Channels []string       `json:"channels"`
-	Message  notify.Message `json:"-"`
+	Channels []notify.Channel `json:"channels"`
+	Message  notify.Message   `json:"-"`
 }
 
 func (a NotifyAction) Execute(ctx context.Context, requests chan<- notify.Request) error {
+	channels := make([]string, len(a.Channels))
+	for i, channel := range a.Channels {
+		channels[i] = channel.String()
+	}
 	request := notify.Request{
-		Channels: a.Channels,
+		Channels: channels,
 		Message:  a.Message,
 		Result:   make(chan error, 1),
 	}

@@ -18,7 +18,7 @@ type Task struct {
 	ScheduleExpression string                `json:"scheduleExpression" gorm:"column:schedule_expression;not null"`
 	ActionType         action.ActionType     `json:"actionType" gorm:"column:action_type;not null"`
 	ActionExpression   json.RawMessage       `json:"actionExpression" gorm:"column:action_expression;not null"`
-	Channel            notify.Channel        `json:"channel"`
+	Channels           []notify.Channel      `json:"channel" gorm:"column:channel;serializer:json"`
 	LastFired          *time.Time            `json:"lastFired" gorm:"column:last_fired"`
 	Enabled            bool                  `json:"enabled" gorm:"column:enabled"`
 }

@@ -5,16 +5,19 @@ import (
 	"net/http"
 	"time"
 
+	"butler/internal/model"
+	"butler/internal/notify"
 	"butler/internal/store"
 
 	"github.com/gin-gonic/gin"
 )
 
 type taskResponse struct {
-	Title           string     `json:"title"`
-	Body            string     `json:"body"`
-	Channels        []string   `json:"channels"`
-	NextTriggeredAt *time.Time `json:"nextTriggeredAt"`
+	Title           string           `json:"title"`
+	Body            string           `json:"body"`
+	Channels        []notify.Channel `json:"channels"`
+	LastFired       *time.Time       `json:"lastFired"`
+	NextTriggeredAt *time.Time       `json:"nextTriggeredAt"`
 }
 
 func NewRouter(store *store.Store) *gin.Engine {
@@ -36,12 +39,85 @@ func NewRouter(store *store.Store) *gin.Engine {
 		tasks := make([]taskResponse, 0, len(taskRows))
 		for _, taskRow := range taskRows {
 			task := taskResponse{
-				Title: taskRow.Title,
-				Body:  taskRow.Body,
+				Title:     taskRow.Title,
+				Body:      taskRow.Body,
+				Channels:  taskRow.Channels,
+				LastFired: taskRow.LastFired,
 			}
 			tasks = append(tasks, task)
 		}
 		c.JSON(http.StatusOK, tasks)
+	})
+	api.POST("/add", func(c *gin.Context) {
+		var task model.Task
+		if err := c.ShouldBindBodyWithJSON(&task); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"error": err.Error(),
+			})
+			return
+		}
+		id, err := store.Add(c, task)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"error": err.Error(),
+			})
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{"id": id})
+	})
+	api.POST("/delete", func(c *gin.Context) {
+		var req struct {
+			ID int64 `json:"id"`
+		}
+		if err := c.ShouldBindBodyWithJSON(&req); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"error": err.Error(),
+			})
+			return
+		}
+		if err := store.Remove(c, req.ID); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"error": err.Error(),
+			})
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{"id": req.ID})
+	})
+	api.POST("/update", func(c *gin.Context) {
+		var task model.Task
+		if err := c.ShouldBindBodyWithJSON(&task); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"error": err.Error(),
+			})
+			return
+		}
+		err := store.Update(c, task)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"error": err.Error(),
+			})
+			return
+		}
+		c.JSON(http.StatusOK, "ok")
+	})
+	api.POST("/get", func(c *gin.Context) {
+		var req struct {
+			ID int64 `json:"id"`
+		}
+		if err := c.ShouldBindBodyWithJSON(&req); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"error": err.Error(),
+			})
+			return
+		}
+		task, err := store.Get(c, req.ID)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"error": err.Error(),
+			})
+			return
+		}
+		c.JSON(http.StatusOK, task)
 	})
 	return router
 }

@@ -17,8 +17,10 @@ import (
 	"butler/internal/api"
 	"butler/internal/config"
 	"butler/internal/engine"
+	"butler/internal/model"
 	"butler/internal/notify"
 	"butler/internal/parser"
+	"butler/internal/store"
 
 	"github.com/kardianos/service"
 	rotatelogs "github.com/lestrrat-go/file-rotatelogs"
@@ -51,7 +53,6 @@ func (p *program) Start(s service.Service) error {
 	if err != nil {
 		return fmt.Errorf("fail to load database:\n%w", err)
 	}
-	nodesChannel := store.Changes()
 	plan, err := config.LoadPlan()
 	if err != nil {
 		return fmt.Errorf("fail to load plan:\n%w", err)
@@ -67,6 +68,13 @@ func (p *program) Start(s service.Service) error {
 	requests := make(chan notify.Request, 10)
 
 	ctx, cancel := context.WithCancel(context.Background())
+	initNodes, err := loadNodes(ctx, store)
+	if err != nil {
+		cancel()
+		return fmt.Errorf("fail to load nodes from database:\n%w", err)
+	}
+	nodesChannel := make(chan []*model.Node, 1)
+	nodesChannel <- initNodes
 	go notify.MessageLoop(ctx, registry, requests, 4)
 	p.cancel = cancel
 
@@ -83,6 +91,30 @@ func (p *program) Start(s service.Service) error {
 		case err != nil:
 			slog.Error("HTTP server failed", "error", err)
 
+		}
+	}()
+
+	go func() {
+		defer close(nodesChannel)
+		changes := store.Changes()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case _, ok := <-changes:
+				if !ok {
+					return
+				}
+			}
+			nodes, err := loadNodes(ctx, store)
+			if err != nil {
+				slog.Error("reload tasks failed", "error", err)
+			}
+			select {
+			case nodesChannel <- nodes:
+			case <-ctx.Done():
+				return
+			}
 		}
 	}()
 
@@ -125,6 +157,25 @@ func ensureHome() error {
 		}
 	}
 	return nil
+}
+
+func loadNodes(ctx context.Context, s *store.Store) ([]*model.Node, error) {
+	tasks, err := s.GetAll(ctx)
+	if err != nil {
+		return nil, err
+	}
+	nodes := make([]*model.Node, 0, len(tasks))
+	for _, task := range tasks {
+		if !task.Enabled {
+			continue
+		}
+		node, err := parser.TaskToNode(task)
+		if err != nil {
+			return nil, fmt.Errorf("task %d %w", task.ID, err)
+		}
+		nodes = append(nodes, &node)
+	}
+	return nodes, nil
 }
 
 func newService(userName string) (service.Service, error) {
