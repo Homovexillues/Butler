@@ -44,6 +44,7 @@ func (p *program) Start(s service.Service) error {
 		return fmt.Errorf("fail to setup logger:\n%w", err)
 	}
 	p.closeLog = closeFn
+
 	cfg, err := config.LoadConfig()
 	if err != nil {
 		return fmt.Errorf("fail to load config:\n%w", err)
@@ -65,22 +66,36 @@ func (p *program) Start(s service.Service) error {
 
 	registry := buildRegistry(cfg)
 
+	ctx, cancel := context.WithCancel(context.Background())
 	requests := make(chan notify.Request, 10)
 
-	ctx, cancel := context.WithCancel(context.Background())
 	initNodes, err := loadNodes(ctx, store)
 	if err != nil {
 		cancel()
 		return fmt.Errorf("fail to load nodes from database:\n%w", err)
 	}
+
 	nodesChannel := make(chan []*model.Node, 1)
 	nodesChannel <- initNodes
+
 	go notify.MessageLoop(ctx, registry, requests, 4)
 	p.cancel = cancel
 
+	LoadHTTPServer(p, store)
+
+	LoadStoreCallback(ctx, nodesChannel, store)
+
+	go engine.Run(ctx, nodesChannel, requests, func(id int64, lastFired time.Time) error {
+		return store.MarkLastFired(ctx, id, lastFired)
+	})
+
+	return nil
+}
+
+func LoadHTTPServer(p *program, s *store.Store) {
 	p.server = &http.Server{
 		Addr:              ":8191",
-		Handler:           api.NewRouter(store),
+		Handler:           api.NewRouter(s),
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 	go func() {
@@ -93,10 +108,12 @@ func (p *program) Start(s service.Service) error {
 
 		}
 	}()
+}
 
+func LoadStoreCallback(ctx context.Context, nodesChannel chan<- []*model.Node, s *store.Store) {
 	go func() {
 		defer close(nodesChannel)
-		changes := store.Changes()
+		changes := s.Changes()
 		for {
 			select {
 			case <-ctx.Done():
@@ -106,7 +123,7 @@ func (p *program) Start(s service.Service) error {
 					return
 				}
 			}
-			nodes, err := loadNodes(ctx, store)
+			nodes, err := loadNodes(ctx, s)
 			if err != nil {
 				slog.Error("reload tasks failed", "error", err)
 				continue
@@ -118,12 +135,6 @@ func (p *program) Start(s service.Service) error {
 			}
 		}
 	}()
-
-	go engine.Run(ctx, nodesChannel, requests, func(id int64, lastFired time.Time) error {
-		return store.MarkLastFired(ctx, id, lastFired)
-	})
-
-	return nil
 }
 
 func (p *program) Stop(s service.Service) error {
