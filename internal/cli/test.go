@@ -24,7 +24,7 @@ var testCmd = &cobra.Command{
 
 		registry := buildRegistry(config)
 
-		notifier, ok := registry.Get(channel)
+		notifier, ok := registry.Get(notify.Channel(channel))
 		if !ok {
 			return fmt.Errorf("fail to get channel %s from registry tab", channel)
 		}

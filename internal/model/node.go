@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"butler/internal/action"
+	"butler/internal/notify"
 	"butler/internal/schedule"
 )
 
@@ -13,6 +14,7 @@ type Node struct {
 	Title     string
 	Body      string
 	Schedule  schedule.Schedule
+	Channels  []notify.Channel
 	Action    action.Action
 	LastFired *time.Time
 }

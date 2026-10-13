@@ -3,11 +3,8 @@ package action
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"os"
 	"os/exec"
-
-	"butler/internal/notify"
 )
 
 type CommandAction struct {
@@ -17,14 +14,10 @@ type CommandAction struct {
 	Env     map[string]string
 }
 
-func (a CommandAction) Execute(ctx context.Context, requests chan<- notify.Request) error {
-	request := notify.Request{
-		Channels: []string{notify.ChannelMQTT.String()},
-		Result:   make(chan error, 1),
-	}
-
+func (a CommandAction) Execute(ctx context.Context) (Result, error) {
 	if a.Command == "" {
-		return fmt.Errorf("command program is empty")
+		errorInfo := "command program is empty"
+		return Result{Output: errorInfo}, fmt.Errorf(errorInfo)
 	}
 
 	cmd := exec.CommandContext(ctx, a.Command, a.Args...)
@@ -39,24 +32,9 @@ func (a CommandAction) Execute(ctx context.Context, requests chan<- notify.Reque
 	}
 	output, err := cmd.CombinedOutput()
 	if err != nil {
-		return fmt.Errorf(
-			"execute %q: %w\noutput:\n%s",
-			a.Command,
-			err,
-			output)
+		return Result{
+			Output: string(output),
+		}, fmt.Errorf("fail to execute %q:\n %w", a.Command, err)
 	}
-	if len(output) > 0 {
-		slog.Info("command executed", "command", a.Command, "output", string(output))
-		request.Message.Title = fmt.Sprintf("command %s execute result", a.Command)
-		request.Message.Body = string(output)
-		select {
-		case requests <- request:
-			if err := <-request.Result; err != nil {
-				slog.Error("command succeeded but notification failed", "command", a.Command, "error", err)
-			}
-		case <-ctx.Done():
-			return ctx.Err()
-		}
-	}
-	return nil
+	return Result{Output: string(output)}, nil
 }

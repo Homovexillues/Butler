@@ -3,6 +3,7 @@ package engine
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"time"
 
@@ -87,18 +88,34 @@ func Run(ctx context.Context, nodesChannel <-chan []*model.Node, requests chan<-
 		case <-timeChannel:
 			if !time.Now().Before(soonest) {
 				running[target.ID] = true
-				startAction(ctx, target, soonest, requests, results)
+				startAction(ctx, target, soonest, results)
 			}
 		case result := <-results:
 			if timer != nil {
 				timer.Stop()
 			}
+			request := notify.Request{
+				Channels: result.Node.Channels,
+				Message: notify.Message{
+					Title: result.Node.Title,
+					Body:  result.Node.Body,
+				},
+			}
 			delete(running, result.Node.ID)
 			if result.Err != nil {
 				slog.Error("action failed", "action", result.Node.Title, "error", result.Err)
-				continue
-			} else {
+				request.Message.Body += fmt.Sprintf("\n=action failed=\n %s %v", result.Result.Output, result.Err)
+			} else if result.Node.Action != nil {
 				slog.Info("action succeed", "title", result.Node.Title)
+				request.Message.Body += fmt.Sprintf("\n=action succeed=\n %s", result.Result.Output)
+			}
+			select {
+			case requests <- request:
+			case <-ctx.Done():
+				return
+			}
+			if result.Err != nil {
+				continue
 			}
 
 			fired := result.FinishedAt
@@ -117,6 +134,10 @@ func Run(ctx context.Context, nodesChannel <-chan []*model.Node, requests chan<-
 				timer.Stop()
 			}
 			return
+		}
+
+		if timer != nil {
+			timer.Stop()
 		}
 	}
 }

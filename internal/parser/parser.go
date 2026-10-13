@@ -89,12 +89,8 @@ func MakeSchedule(scheduleType schedule.ScheduleType, expression string) (schedu
 func MakeAction(actionType action.ActionType, expression string) (action.Action, error) {
 	var taskAction action.Action
 	switch actionType {
-	case action.ActionNotify:
-		var notifyAction action.NotifyAction
-		if err := json.Unmarshal([]byte(expression), &notifyAction); err != nil {
-			return taskAction, err
-		}
-		taskAction = notifyAction
+	case "":
+		return nil, nil
 	case action.ActionCommand:
 		var commandAction action.CommandAction
 		if err := json.Unmarshal([]byte(expression), &commandAction); err != nil {
@@ -123,40 +119,10 @@ func TaskToNode(task model.Task) (model.Node, error) {
 		Body:      task.Body,
 		Schedule:  taskSchedule,
 		Action:    taskAction,
+		Channels:  task.Channels,
 		LastFired: task.LastFired,
 	}
 	return node, nil
-}
-
-func PlanToNodes(plan *PlanNode) ([]*model.Node, error) {
-	var out []*model.Node
-	// 如果用index,item 的写法的话会创建副本
-	for i := range plan.Children {
-		err := walk(&plan.Children[i], &out)
-		if err != nil {
-			return nil, err
-		}
-	}
-	return out, nil
-}
-
-func walk(planNode *PlanNode, out *[]*model.Node) error {
-	if len(planNode.Children) > 0 {
-		for i := range planNode.Children {
-			err := walk(&planNode.Children[i], out)
-			if err != nil {
-				return err
-			}
-		}
-		return nil
-	}
-
-	node, err := planNode.toNode()
-	if err != nil {
-		return err
-	}
-	*out = append(*out, &node)
-	return nil
 }
 
 func toOffsetSchedule(s schedule.Schedule, notifyOffsets []string) (schedule.Schedule, error) {

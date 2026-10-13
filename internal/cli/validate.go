@@ -18,11 +18,7 @@ var validateCmd = &cobra.Command{
 			return fmt.Errorf("fail to load config:\n%w", err)
 		}
 		errs = cfg.ValidateConfig()
-		plan, err := config.LoadPlan()
-		if err != nil {
-			return fmt.Errorf("fail to load plan:\n%w", err)
-		}
-		errs = append(errs, plan.ValidatePlan()...)
+		// todo: 待验证数据库中节点
 		for _, err := range errs {
 			return fmt.Errorf("%w", err)
 		}

@@ -12,6 +12,7 @@ import (
 	"os/user"
 	"path/filepath"
 	"runtime"
+	"sync"
 	"time"
 
 	"butler/internal/api"
@@ -54,15 +55,6 @@ func (p *program) Start(s service.Service) error {
 	if err != nil {
 		return fmt.Errorf("fail to load database:\n%w", err)
 	}
-	plan, err := config.LoadPlan()
-	if err != nil {
-		return fmt.Errorf("fail to load plan:\n%w", err)
-	}
-
-	_, err = parser.PlanToNodes(plan)
-	if err != nil {
-		return fmt.Errorf("fail to convert plan to nodes:\n%w", err)
-	}
 
 	registry := buildRegistry(cfg)
 
@@ -78,8 +70,9 @@ func (p *program) Start(s service.Service) error {
 	nodesChannel := make(chan []*model.Node, 1)
 	nodesChannel <- initNodes
 
-	go notify.MessageLoop(ctx, registry, requests, 4)
 	p.cancel = cancel
+
+	LoadMessageLoop(ctx, registry, requests, 4)
 
 	LoadHTTPServer(p, store)
 
@@ -107,6 +100,32 @@ func LoadHTTPServer(p *program, s *store.Store) {
 			slog.Error("HTTP server failed", "error", err)
 
 		}
+	}()
+}
+
+func LoadMessageLoop(ctx context.Context, registry *notify.Registry, requests <-chan notify.Request, workers int) {
+	go func() {
+		var wg sync.WaitGroup
+		for range workers {
+			wg.Go(
+				func() {
+					for {
+						select {
+						case request := <-requests:
+							err := notify.Broadcast(ctx, registry, request.Channels, request.Message)
+							if err != nil {
+								slog.Error("fail to send message", "Title", request.Message.Title, "error", err)
+							} else {
+								slog.Info("succeed to send message", "Title", request.Message.Title)
+							}
+						case <-ctx.Done():
+							return
+						}
+					}
+				},
+			)
+		}
+		wg.Wait()
 	}()
 }
 
