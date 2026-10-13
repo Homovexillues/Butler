@@ -15,7 +15,7 @@ func buildRegistry(config config.Config) *notify.Registry {
 	registry.Register(notify.MessageboxNotifier{})
 
 	mqttConfig := config.Mqtt
-	mqttNotifier, err := notify.NewMqttNotifier(mqttConfig.Broker, mqttConfig.Topic, mqttConfig.Username, mqttConfig.Password, mqttConfig.ClientID, mqttConfig.CertFile, mqttConfig.SkipVerify)
+	mqttNotifier, err := notify.NewMqttNotifier(mqttConfig.Address, mqttConfig.Topic, mqttConfig.Username, mqttConfig.Password, mqttConfig.CertFile, mqttConfig.KeyFile, mqttConfig.SkipVerify)
 	if err != nil {
 		slog.Error("fail to make notifier", "channel", notify.ChannelMQTT, "err", err)
 	} else {

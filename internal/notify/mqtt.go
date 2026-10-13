@@ -3,18 +3,17 @@ package notify
 import (
 	"context"
 	"crypto/tls"
-	"crypto/x509"
 	"encoding/json"
 	"fmt"
-	"log/slog"
-	"os"
 	"time"
 
-	mqtt "github.com/eclipse/paho.mqtt.golang"
+	mqtt "github.com/mochi-mqtt/server/v2"
+	"github.com/mochi-mqtt/server/v2/hooks/auth"
+	"github.com/mochi-mqtt/server/v2/listeners"
 )
 
 type mqttNotifier struct {
-	Client mqtt.Client
+	Server *mqtt.Server
 	Topic  string
 }
 
@@ -23,69 +22,56 @@ const (
 	connectionTimeout = 3 * time.Second
 )
 
-func NewMqttNotifier(broker string, topic string, username string, password string, clientID string, crtFilePath string, insecure bool) (Notifier, error) {
-	opts := mqtt.NewClientOptions()
-	opts.SetConnectRetry(true)
-	opts.SetConnectRetryInterval(10 * time.Second)
-	opts.SetAutoReconnect(true)
-	tlsConfig := &tls.Config{}
-	protocol := "tcp"
-	if username != "" {
-		opts.SetUsername(username)
+func NewMqttNotifier(listen, topic, username, password, certFile, keyFile string, insecure bool) (Notifier, error) {
+	if listen == "" || topic == "" || username == "" || password == "" {
+		return nil, fmt.Errorf("mqtt configuration is not complete")
 	}
-	if password != "" {
-		opts.SetPassword(password)
-	}
-	useTLS := false
-	if insecure {
-		useTLS = true
-		tlsConfig.InsecureSkipVerify = insecure
-	}
-	if crtFilePath != "" {
-		useTLS = true
-		caCert, err := os.ReadFile(crtFilePath)
+	var tlsConfig *tls.Config
+	if !insecure {
+		cert, err := tls.LoadX509KeyPair(certFile, keyFile)
 		if err != nil {
-			return nil, fmt.Errorf("fail to read CA cert: %w", err)
+			return nil, fmt.Errorf("fail to load certificate file:%w", err)
 		}
-		caCertPool := x509.NewCertPool()
-		if ok := caCertPool.AppendCertsFromPEM(caCert); !ok {
-			return nil, fmt.Errorf("fail to parse CA cert:%s", crtFilePath)
+		tlsConfig = &tls.Config{
+			MinVersion:   tls.VersionTLS12,
+			Certificates: []tls.Certificate{cert},
 		}
-
-		tlsConfig.RootCAs = caCertPool
 	}
-	if useTLS {
-		protocol = "tls"
-		opts.SetTLSConfig(tlsConfig)
-	}
-	address := protocol + "://" + broker
-	opts.AddBroker(address)
-	if clientID == "" {
-		clientID = "butler"
-	}
-	opts.SetClientID(clientID)
-
-	opts.SetConnectionNotificationHandler(func(_ mqtt.Client, event mqtt.ConnectionNotification) {
-		switch e := event.(type) {
-		case mqtt.ConnectionNotificationConnecting:
-			slog.Debug("mqtt connecting", "attempt", e.Attempt, "reconnect", e.IsReconnect)
-		case mqtt.ConnectionNotificationConnected:
-			slog.Info("mqtt broker connected")
-		case mqtt.ConnectionNotificationFailed:
-			slog.Warn("mqtt connection failed", "error", e.Reason)
-		case mqtt.ConnectionNotificationLost:
-			slog.Warn("mqtt connection lost", "error", e.Reason)
-		}
+	broker := mqtt.New(&mqtt.Options{
+		InlineClient: true,
 	})
-
-	client := mqtt.NewClient(opts)
-	client.Connect()
-
-	mqttNotifier := mqttNotifier{
-		Client: client,
-		Topic:  topic,
+	err := broker.AddHook(new(auth.Hook), &auth.Options{
+		Ledger: &auth.Ledger{
+			Users: auth.Users{
+				username: {
+					Password: auth.RString(password),
+					ACL: auth.Filters{
+						auth.RString(topic): auth.ReadOnly,
+					},
+				},
+			},
+			ACL: auth.ACLRules{
+				{Filters: auth.Filters{"#": auth.Deny}},
+			},
+		},
+	})
+	if err != nil {
+		return nil, err
 	}
-	return mqttNotifier, nil
+	err = broker.AddListener(listeners.NewTCP(listeners.Config{
+		ID:        "mqtt-tls",
+		Address:   listen,
+		TLSConfig: tlsConfig,
+	}))
+	if err != nil {
+		_ = broker.Close()
+		return nil, err
+	}
+	if err = broker.Serve(); err != nil {
+		_ = broker.Close()
+		return nil, err
+	}
+	return &mqttNotifier{Server: broker, Topic: topic}, nil
 }
 
 func (mqttNotifier mqttNotifier) Name() string {
@@ -97,14 +83,5 @@ func (mqttNotifier mqttNotifier) Send(ctx context.Context, message Message) erro
 	if err != nil {
 		return err
 	}
-	if !mqttNotifier.Client.IsConnectionOpen() {
-		return fmt.Errorf("mqtt broker not connected")
-	}
-	token := mqttNotifier.Client.Publish(mqttNotifier.Topic, qosAtleastOnce, false, payload)
-	select {
-	case <-token.Done():
-		return token.Error()
-	case <-ctx.Done():
-		return ctx.Err()
-	}
+	return mqttNotifier.Server.Publish(mqttNotifier.Topic, payload, false, qosAtleastOnce)
 }

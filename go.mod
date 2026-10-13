@@ -4,12 +4,12 @@ go 1.26.2
 
 require (
 	github.com/6tail/lunar-go v1.4.6
-	github.com/eclipse/paho.mqtt.golang v1.5.1
 	github.com/gen2brain/beeep v0.11.2
 	github.com/gen2brain/dlgs v0.0.0-20220603100644-40c77870fa8d
 	github.com/gin-gonic/gin v1.12.0
 	github.com/kardianos/service v1.2.4
 	github.com/lestrrat-go/file-rotatelogs v2.4.0+incompatible
+	github.com/mochi-mqtt/server/v2 v2.7.9
 	github.com/robfig/cron/v3 v3.0.1
 	github.com/spf13/cobra v1.10.2
 	github.com/tailscale/hujson v0.0.0-20260302212456-ecc657c15afd
@@ -54,6 +54,7 @@ require (
 	github.com/pkg/errors v0.9.1 // indirect
 	github.com/quic-go/qpack v0.6.0 // indirect
 	github.com/quic-go/quic-go v0.59.0 // indirect
+	github.com/rs/xid v1.4.0 // indirect
 	github.com/sergeymakinen/go-bmp v1.0.0 // indirect
 	github.com/sergeymakinen/go-ico v1.0.0-beta.0 // indirect
 	github.com/spf13/pflag v1.0.9 // indirect
@@ -64,8 +65,8 @@ require (
 	golang.org/x/arch v0.22.0 // indirect
 	golang.org/x/crypto v0.48.0 // indirect
 	golang.org/x/net v0.51.0 // indirect
-	golang.org/x/sync v0.21.0 // indirect
 	golang.org/x/sys v0.47.0 // indirect
 	golang.org/x/text v0.37.0 // indirect
 	google.golang.org/protobuf v1.36.10 // indirect
+	gopkg.in/yaml.v3 v3.0.1 // indirect
 )

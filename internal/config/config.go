@@ -17,12 +17,13 @@ type Config struct {
 }
 
 type MqttSettings struct {
-	Broker     string `json:"broker"`
+	Address    string `json:"address"`
 	Topic      string `json:"topic"`
 	ClientID   string `json:"clientId"`
 	Username   string `json:"username"`
 	Password   string `json:"password"`
 	CertFile   string `json:"certfile"`
+	KeyFile    string `json:"keyfile"`
 	SkipVerify bool   `json:"skipverify"`
 }
 type EmailSettings struct {
@@ -156,7 +157,7 @@ func (cfg Config) ValidateConfig() []error {
 // 未配置则视为不使用该渠道，跳过。username/password 可选（允许匿名 broker），
 // certfile 可选（SkipVerify 时不需要）。
 func (m MqttSettings) validate() []error {
-	configured := m.Broker != "" || m.Topic != "" || m.Username != "" ||
+	configured := m.Address != "" || m.Topic != "" || m.Username != "" ||
 		m.Password != "" || m.CertFile != "" || m.SkipVerify
 	if !configured {
 		return nil
@@ -166,7 +167,7 @@ func (m MqttSettings) validate() []error {
 		name string
 		ok   bool
 	}{
-		{"broker", m.Broker != ""},
+		{"broker", m.Address != ""},
 		{"topic", m.Topic != ""},
 	}
 	for _, r := range required {
