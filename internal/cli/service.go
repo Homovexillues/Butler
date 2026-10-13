@@ -109,6 +109,7 @@ func (p *program) Start(s service.Service) error {
 			nodes, err := loadNodes(ctx, store)
 			if err != nil {
 				slog.Error("reload tasks failed", "error", err)
+				continue
 			}
 			select {
 			case nodesChannel <- nodes:

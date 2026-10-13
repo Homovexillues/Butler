@@ -7,6 +7,7 @@ import (
 
 	"butler/internal/model"
 	"butler/internal/notify"
+	"butler/internal/parser"
 	"butler/internal/store"
 
 	"github.com/gin-gonic/gin"
@@ -35,14 +36,26 @@ func NewRouter(store *store.Store) *gin.Engine {
 		taskRows, err := store.GetAll(c.Request.Context())
 		if err != nil {
 			c.JSON(http.StatusBadRequest, err)
+			return
 		}
 		tasks := make([]taskResponse, 0, len(taskRows))
 		for _, taskRow := range taskRows {
+			taskSchedule, err := parser.MakeSchedule(taskRow.ScheduleType, taskRow.ScheduleExpression)
+			if err != nil {
+				c.JSON(http.StatusBadRequest, err)
+				return
+			}
+			nextTriggered, ok := taskSchedule.NextAfter(*taskRow.LastFired)
+			if !ok {
+				c.JSON(http.StatusBadRequest, err)
+				return
+			}
 			task := taskResponse{
-				Title:     taskRow.Title,
-				Body:      taskRow.Body,
-				Channels:  taskRow.Channels,
-				LastFired: taskRow.LastFired,
+				Title:           taskRow.Title,
+				Body:            taskRow.Body,
+				Channels:        taskRow.Channels,
+				LastFired:       taskRow.LastFired,
+				NextTriggeredAt: &nextTriggered,
 			}
 			tasks = append(tasks, task)
 		}

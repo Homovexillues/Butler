@@ -18,7 +18,7 @@ func AllChannels() []string {
 		ChannelSystem.String(),
 		ChannelMQTT.String(),
 		ChannelEmail.String(),
-		ChannelMessageBox.String(),
+		// ChannelMessageBox.String(),
 	}
 }
 

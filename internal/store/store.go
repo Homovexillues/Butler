@@ -14,7 +14,7 @@ import (
 
 type Store struct {
 	db           *gorm.DB
-	nodesChannel chan []*model.Node
+	nodesChannel chan struct{}
 }
 
 func NewStore(dbPath string) (*Store, error) {
@@ -34,12 +34,13 @@ func NewStore(dbPath string) (*Store, error) {
 		return nil, err
 	}
 	store := Store{
-		db: db,
+		db:           db,
+		nodesChannel: make(chan struct{}, 1),
 	}
 	return &store, err
 }
 
-func (store *Store) Changes() <-chan []*model.Node {
+func (store *Store) Changes() <-chan struct{} {
 	return store.nodesChannel
 }
 
@@ -101,12 +102,4 @@ func (store *Store) GetAll(ctx context.Context) ([]model.Task, error) {
 		return nil, err
 	}
 	return rows, nil
-}
-
-func TaskToTaskRow(task model.Task) (model.Task, error) {
-	return model.Task{}, nil
-}
-
-func TaskRowToTask(task model.Task) (model.Task, error) {
-	return model.Task{}, nil
 }
