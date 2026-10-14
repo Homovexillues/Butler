@@ -1,32 +1,59 @@
 package cli
 
 import (
+	"errors"
 	"fmt"
 
 	"butler/internal/config"
+	"butler/internal/model"
+	"butler/internal/parser"
 
 	"github.com/spf13/cobra"
 )
 
 var validateCmd = &cobra.Command{
 	Use:   "validate",
-	Short: "验证配置文件语法",
+	Short: "验证配置文件及数据库中的所有任务",
+	Args:  cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		var errs []error
 		cfg, err := config.LoadConfig()
 		if err != nil {
-			return fmt.Errorf("fail to load config:\n%w", err)
+			errs = append(errs, fmt.Errorf("load config: %w", err))
+		} else {
+			errs = append(errs, cfg.ValidateConfig()...)
 		}
-		errs = cfg.ValidateConfig()
-		// todo: 待验证数据库中节点
-		for _, err := range errs {
-			return fmt.Errorf("%w", err)
+		s, err := config.LoadDatabase()
+		if err != nil {
+			errs = append(errs, fmt.Errorf("load database: %w", err))
+		} else {
+			tasks, err := s.GetAll(cmd.Context())
+			if err != nil {
+				errs = append(errs, fmt.Errorf("load tasks: %w", err))
+			} else {
+				errs = append(errs, validateTasks(tasks))
+			}
+			if err := s.Close(); err != nil {
+				errs = append(errs, fmt.Errorf("close database: %w", err))
+			}
 		}
-		fmt.Printf("Perfect!")
-		return nil
+		if err := errors.Join(errs...); err != nil {
+			return err
+		}
+		_, err = fmt.Fprintln(cmd.OutOrStdout(), "配置及任务校验通过。")
+		return err
 	},
 }
 
-func init() {
-	rootCmd.AddCommand(validateCmd)
+// Check disabled tasks too, without executing actions or sending notifications.
+func validateTasks(tasks []model.Task) error {
+	var errs []error
+	for _, task := range tasks {
+		if _, err := parser.TaskToNode(task); err != nil {
+			errs = append(errs, fmt.Errorf("task %d (%s): %w", task.ID, task.Title, err))
+		}
+	}
+	return errors.Join(errs...)
 }
+
+func init() { rootCmd.AddCommand(validateCmd) }

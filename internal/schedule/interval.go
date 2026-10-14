@@ -1,6 +1,7 @@
 package schedule
 
 import (
+	"fmt"
 	"strconv"
 	"strings"
 	"time"
@@ -12,17 +13,17 @@ type Interval struct {
 
 func NewIntervalSchedule(expression string) (Interval, error) {
 	interval := Interval{}
-	for _, section := range strings.Split(expression, ",") {
+	for section := range strings.SplitSeq(expression, ",") {
 		if len(section) <= 1 {
-			return interval, nil
+			return interval, fmt.Errorf("invalid interval section %q: expected a number followed by d, h, m, or s", section)
 		}
 		numStr := section[:len(section)-1] // 或者用你想判断的单位                                                                                                                                                                                                │
 		if numStr == "" {
-			return interval, nil
+			return interval, fmt.Errorf("invalid interval section %q: number is missing", section)
 		}
 		num, err := strconv.Atoi(numStr)
 		if err != nil {
-			return interval, nil
+			return interval, err
 		}
 		switch {
 		case strings.HasSuffix(section, "d"):

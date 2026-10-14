@@ -18,6 +18,9 @@ type notifyResult struct {
 }
 
 func Broadcast(ctx context.Context, registry *Registry, channels []Channel, message Message) error {
+	if err := ValidateChannels(channels); err != nil {
+		return err
+	}
 	var wg sync.WaitGroup
 	results := make(chan notifyResult, len(channels))
 	for _, name := range channels {
@@ -31,10 +34,10 @@ func Broadcast(ctx context.Context, registry *Registry, channels []Channel, mess
 			}
 			err := notifier.Send(ctx, message)
 			if err != nil {
-				results <- notifyResult{Channel(notifier.Name()), fmt.Errorf("fail to send message throw %s channel:\n%w",
+				results <- notifyResult{name, fmt.Errorf("fail to send message throw %s channel:\n%w",
 					notifier.Name(), err)}
 			} else {
-				results <- notifyResult{Channel(notifier.Name()), nil}
+				results <- notifyResult{name, nil}
 			}
 		}(name)
 	}
@@ -55,14 +58,14 @@ func Broadcast(ctx context.Context, registry *Registry, channels []Channel, mess
 	if len(failed) == 0 {
 		return nil
 	}
-	reportTo := make([]string, 0, len(channels))
+	reportTo := make([]Channel, 0, len(channels))
 	if len(succeeded) > 0 {
 		for channel := range succeeded {
-			reportTo = append(reportTo, channel.String())
+			reportTo = append(reportTo, channel)
 		}
 	} else {
 		for _, channel := range AllChannels() {
-			if !slices.Contains(channels, Channel(channel)) {
+			if !slices.Contains(channels, channel) {
 				reportTo = append(reportTo, channel)
 			}
 		}
@@ -70,14 +73,14 @@ func Broadcast(ctx context.Context, registry *Registry, channels []Channel, mess
 
 	var reportError error
 	for _, channel := range reportTo {
-		if notifier, ok := registry.Get(Channel(channel)); ok {
+		if notifier, ok := registry.Get(channel); ok {
 			if err := notifier.Send(ctx, Message{
 				Title: message.Title + "(含失败报告)",
 				Body:  message.Body + fmt.Sprintf("\n%s", failedError.Error()),
 			}); err != nil {
 				reportError = errors.Join(reportError, err)
 			} else {
-				succeeded[Channel(channel)] = true
+				succeeded[channel] = true
 			}
 		}
 	}

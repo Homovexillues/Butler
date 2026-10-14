@@ -16,7 +16,10 @@ var testCmd = &cobra.Command{
 	Short: "立即向指定渠道发送一条测试消息",
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		channel := args[0]
+		channel, ok := notify.ParseChannel(args[0])
+		if !ok {
+			return fmt.Errorf("invalid notification channel %q", args[0])
+		}
 		config, err := config.LoadConfig()
 		if err != nil {
 			return fmt.Errorf("fail to load config:\n%w", err)
@@ -24,7 +27,7 @@ var testCmd = &cobra.Command{
 
 		registry := buildRegistry(config)
 
-		notifier, ok := registry.Get(notify.Channel(channel))
+		notifier, ok := registry.Get(channel)
 		if !ok {
 			return fmt.Errorf("fail to get channel %s from registry tab", channel)
 		}

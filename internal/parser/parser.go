@@ -1,4 +1,4 @@
-// Package parser is to Load config from jsonc files
+// Package parser is to load config from jsonc files
 package parser
 
 import (
@@ -12,6 +12,7 @@ import (
 
 	"butler/internal/action"
 	"butler/internal/model"
+	"butler/internal/notify"
 	"butler/internal/schedule"
 
 	"github.com/tailscale/hujson"
@@ -33,11 +34,11 @@ func Parse[T any](path string) (T, error) {
 	return result, json.Unmarshal(stdJSONData, &result)
 }
 
-func MakeSchedule(scheduleType schedule.ScheduleType, expression string) (schedule.Schedule, error) {
+func MakeSchedule(scheduleType schedule.ScheduleType, expression string, offset []string) (schedule.Schedule, error) {
 	var taskSchedule schedule.Schedule
 	switch scheduleType {
 	case schedule.ScheduleOnce:
-		at, err := time.Parse("2006-01-01 15:04:05", expression)
+		at, err := time.Parse("2006-01-02 15:04:05", expression)
 		if err != nil {
 			return taskSchedule, err
 		}
@@ -45,7 +46,7 @@ func MakeSchedule(scheduleType schedule.ScheduleType, expression string) (schedu
 			At: at,
 		}
 	case schedule.ScheduleSolar:
-		at, err := time.Parse("2006-01-01 15:04:05", expression)
+		at, err := time.Parse("01-02 15:04:05", expression)
 		if err != nil {
 			return taskSchedule, err
 		}
@@ -57,7 +58,7 @@ func MakeSchedule(scheduleType schedule.ScheduleType, expression string) (schedu
 			Second: at.Second(),
 		}
 	case schedule.ScheduleLunar:
-		at, err := time.Parse("2006-01-01 15:04:05", expression)
+		at, err := time.Parse("01-02 15:04:05", expression)
 		if err != nil {
 			return taskSchedule, err
 		}
@@ -83,6 +84,13 @@ func MakeSchedule(scheduleType schedule.ScheduleType, expression string) (schedu
 	default:
 		return taskSchedule, fmt.Errorf("unknown schedule type %q", scheduleType)
 	}
+	if len(offset) != 0 {
+		offsetSchedule, err := toOffsetSchedule(taskSchedule, offset)
+		if err != nil {
+			return nil, fmt.Errorf("invalid schedule offset: %w", err)
+		}
+		taskSchedule = offsetSchedule
+	}
 	return taskSchedule, nil
 }
 
@@ -105,7 +113,10 @@ func MakeAction(actionType action.ActionType, expression string) (action.Action,
 
 func TaskToNode(task model.Task) (model.Node, error) {
 	var node model.Node
-	taskSchedule, err := MakeSchedule(task.ScheduleType, task.ScheduleExpression)
+	if err := notify.ValidateChannels(task.Channels); err != nil {
+		return node, fmt.Errorf("task %d: %w", task.ID, err)
+	}
+	taskSchedule, err := MakeSchedule(task.ScheduleType, task.ScheduleExpression, task.ScheduleOffset)
 	if err != nil {
 		return model.Node{}, err
 	}

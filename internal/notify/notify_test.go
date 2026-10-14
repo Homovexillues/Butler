@@ -57,17 +57,21 @@ func TestRegistry_RegisterAndGet(t *testing.T) {
 		}
 	})
 
-	t.Run("同名注册_后者覆盖前者", func(t *testing.T) {
+	t.Run("同名注册_拒绝覆盖", func(t *testing.T) {
 		reg := NewRegistry()
-		reg.Register(&mockNotifier{name: "x", failWith: errors.New("旧")})
-		newer := &mockNotifier{name: "x"}
-		reg.Register(newer)
-
-		got, _ := reg.Get("x")
-		if got != newer {
-			t.Error("同名 Register 应覆盖为最新实例")
+		old := &mockNotifier{name: "system"}
+		if err := reg.Register(old); err != nil {
+			t.Fatal(err)
+		}
+		if err := reg.Register(&mockNotifier{name: "system"}); err == nil {
+			t.Fatal("duplicate accepted")
+		}
+		got, _ := reg.Get(ChannelSystem)
+		if got != old {
+			t.Fatal("original replaced")
 		}
 	})
+
 }
 
 // ---- Broadcast ----
@@ -83,7 +87,7 @@ func TestBroadcast(t *testing.T) {
 		reg.Register(sys)
 		reg.Register(mqtt)
 
-		if err := broadcast(ctx, reg, []string{"system", "mqtt"}, msg); err != nil {
+		if err := Broadcast(ctx, reg, []Channel{"system", "mqtt"}, msg); err != nil {
 			t.Fatalf("broadcast 返回错误：%v", err)
 		}
 
@@ -108,7 +112,7 @@ func TestBroadcast(t *testing.T) {
 
 		// mqtt 失败后，已经成功的 email 会再收到一次失败报告。
 		// 只要失败报告成功送达，整个通知请求就视为成功。
-		err := broadcast(ctx, reg, []string{"mqtt", "email"}, msg)
+		err := Broadcast(ctx, reg, []Channel{"mqtt", "email"}, msg)
 		if err != nil {
 			t.Fatalf("已有渠道成功并收到失败报告，broadcast 不应返回错误：%v", err)
 		}
@@ -136,9 +140,9 @@ func TestBroadcast(t *testing.T) {
 		reg := NewRegistry()
 		reg.Register(good)
 
-		// "bark" 没注册，但 system 能发送原消息和失败报告，
+		// "email" 没注册，但 system 能发送原消息和失败报告，
 		// 因此整体通知仍然成功。
-		if err := broadcast(ctx, reg, []string{"bark", "system"}, msg); err != nil {
+		if err := Broadcast(ctx, reg, []Channel{"email", "system"}, msg); err != nil {
 			t.Fatalf("system 已成功接收失败报告，不应返回错误：%v", err)
 		}
 
@@ -154,7 +158,7 @@ func TestBroadcast(t *testing.T) {
 		reg.Register(bad)
 		reg.Register(fallback)
 
-		if err := broadcast(ctx, reg, []string{"mqtt"}, msg); err != nil {
+		if err := Broadcast(ctx, reg, []Channel{"mqtt"}, msg); err != nil {
 			t.Fatalf("备用 email 已成功报告错误，不应返回错误：%v", err)
 		}
 		if bad.callCount() != 1 {
@@ -171,7 +175,7 @@ func TestBroadcast(t *testing.T) {
 		reg := NewRegistry()
 		reg.Register(bad)
 
-		err := broadcast(ctx, reg, []string{"mqtt"}, msg)
+		err := Broadcast(ctx, reg, []Channel{"mqtt"}, msg)
 		if !errors.Is(err, brokerErr) {
 			t.Fatalf("broadcast 错误 = %v，期望包含 %v", err, brokerErr)
 		}
@@ -179,8 +183,35 @@ func TestBroadcast(t *testing.T) {
 
 	t.Run("空渠道列表_不panic", func(t *testing.T) {
 		reg := NewRegistry()
-		if err := broadcast(ctx, reg, nil, msg); err != nil {
-			t.Fatalf("空渠道列表不应返回错误：%v", err)
+		if err := Broadcast(ctx, reg, nil, msg); err == nil {
+			t.Fatal("empty channels accepted")
 		}
 	})
+}
+
+func TestInvalidChannelInputs(t *testing.T) {
+	for _, name := range []string{"", "unknown", " system", "SYSTEM"} {
+		t.Run(name, func(t *testing.T) {
+			if _, ok := ParseChannel(name); ok {
+				t.Fatal("invalid name parsed")
+			}
+			reg := NewRegistry()
+			if err := reg.Register(&mockNotifier{name: name}); err == nil {
+				t.Fatal("invalid notifier registered")
+			}
+			sys := &mockNotifier{name: "system"}
+			if err := reg.Register(sys); err != nil {
+				t.Fatal(err)
+			}
+			if err := Broadcast(context.Background(), reg, []Channel{Channel(name), ChannelSystem}, Message{}); err == nil {
+				t.Fatal("invalid configuration broadcast")
+			}
+			if sys.callCount() != 0 {
+				t.Fatal("invalid configuration reached a channel")
+			}
+		})
+	}
+	if err := NewRegistry().Register(nil); err == nil {
+		t.Fatal("nil notifier accepted")
+	}
 }

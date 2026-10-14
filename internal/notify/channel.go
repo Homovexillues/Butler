@@ -1,5 +1,7 @@
 package notify
 
+import "fmt"
+
 type Channel string
 
 const (
@@ -13,12 +15,12 @@ func (c Channel) String() string {
 	return string(c)
 }
 
-func AllChannels() []string {
-	return []string{
-		ChannelSystem.String(),
-		ChannelMQTT.String(),
-		ChannelEmail.String(),
-		// ChannelMessageBox.String(),
+func AllChannels() []Channel {
+	return []Channel{
+		ChannelSystem,
+		ChannelMQTT,
+		ChannelEmail,
+		ChannelMessageBox,
 	}
 }
 
@@ -30,4 +32,17 @@ func ParseChannel(value string) (Channel, bool) {
 	default:
 		return "", false
 	}
+}
+
+// ValidateChannels rejects empty and unknown channel configurations.
+func ValidateChannels(channels []Channel) error {
+	if len(channels) == 0 {
+		return fmt.Errorf("notification channels are empty")
+	}
+	for i, ch := range channels {
+		if _, ok := ParseChannel(string(ch)); !ok {
+			return fmt.Errorf("channels[%d]: invalid channel %q", i, ch)
+		}
+	}
+	return nil
 }

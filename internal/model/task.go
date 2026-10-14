@@ -17,7 +17,7 @@ type Task struct {
 	ScheduleOffset     []string              `json:"scheduleOffset" gorm:"column:schedule_offset;serializer:json"`
 	ScheduleExpression string                `json:"scheduleExpression" gorm:"column:schedule_expression;not null"`
 	ActionType         action.ActionType     `json:"actionType" gorm:"column:action_type;not null"`
-	ActionExpression   json.RawMessage       `json:"actionExpression" gorm:"column:action_expression;not null"`
+	ActionExpression   json.RawMessage       `json:"actionExpression" gorm:"column:action_expression;serializer:json;not null"`
 	Channels           []notify.Channel      `json:"channel" gorm:"column:channel;serializer:json"`
 	LastFired          *time.Time            `json:"lastFired" gorm:"column:last_fired"`
 	Enabled            bool                  `json:"enabled" gorm:"column:enabled"`

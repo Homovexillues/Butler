@@ -2,6 +2,7 @@
 package api
 
 import (
+	"embed"
 	"net/http"
 	"time"
 
@@ -13,6 +14,9 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+//go:embed web
+var webFiles embed.FS
+
 type taskResponse struct {
 	Title           string           `json:"title"`
 	Body            string           `json:"body"`
@@ -23,6 +27,12 @@ type taskResponse struct {
 
 func NewRouter(store *store.Store) *gin.Engine {
 	router := gin.Default()
+	router.GET("/", func(c *gin.Context) {
+		page, err := webFiles.ReadFile("web/index.html")
+		if err != nil {
+		}
+		c.Data(http.StatusOK, "text/html; charset=utf-8", page)
+	})
 	router.GET("/ping", func(c *gin.Context) {
 		c.String(http.StatusOK, "pong")
 	})
@@ -40,15 +50,19 @@ func NewRouter(store *store.Store) *gin.Engine {
 		}
 		tasks := make([]taskResponse, 0, len(taskRows))
 		for _, taskRow := range taskRows {
-			taskSchedule, err := parser.MakeSchedule(taskRow.ScheduleType, taskRow.ScheduleExpression)
+			taskSchedule, err := parser.MakeSchedule(taskRow.ScheduleType, taskRow.ScheduleExpression, taskRow.ScheduleOffset)
 			if err != nil {
 				c.JSON(http.StatusBadRequest, err)
 				return
 			}
-			nextTriggered, ok := taskSchedule.NextAfter(*taskRow.LastFired)
-			if !ok {
-				c.JSON(http.StatusBadRequest, err)
-				return
+			var nextTriggered time.Time
+			if taskRow.LastFired != nil {
+				var ok bool
+				nextTriggered, ok = taskSchedule.NextAfter(*taskRow.LastFired)
+				if !ok {
+					c.JSON(http.StatusBadRequest, err)
+					return
+				}
 			}
 			task := taskResponse{
 				Title:           taskRow.Title,
@@ -67,6 +81,10 @@ func NewRouter(store *store.Store) *gin.Engine {
 			c.JSON(http.StatusBadRequest, gin.H{
 				"error": err.Error(),
 			})
+			return
+		}
+		if err := notify.ValidateChannels(task.Channels); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 			return
 		}
 		id, err := store.Add(c, task)
@@ -102,6 +120,10 @@ func NewRouter(store *store.Store) *gin.Engine {
 			c.JSON(http.StatusBadRequest, gin.H{
 				"error": err.Error(),
 			})
+			return
+		}
+		if err := notify.ValidateChannels(task.Channels); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 			return
 		}
 		err := store.Update(c, task)

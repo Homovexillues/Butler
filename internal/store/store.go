@@ -40,6 +40,10 @@ func NewStore(dbPath string) (*Store, error) {
 	return &store, err
 }
 
+func (store *Store) reportChange() {
+	store.nodesChannel <- struct{}{}
+}
+
 func (store *Store) Changes() <-chan struct{} {
 	return store.nodesChannel
 }
@@ -56,6 +60,7 @@ func (store *Store) Add(ctx context.Context, task model.Task) (int64, error) {
 	if err := store.db.WithContext(ctx).Create(&task).Error; err != nil {
 		return -1, err
 	}
+	store.reportChange()
 	return task.ID, nil
 }
 
@@ -67,6 +72,7 @@ func (store *Store) Remove(ctx context.Context, id int64) error {
 	if res.RowsAffected == 0 {
 		return errors.New("task not found")
 	}
+	store.reportChange()
 	return nil
 }
 
@@ -85,6 +91,7 @@ func (store *Store) Update(ctx context.Context, task model.Task) error {
 	if res.RowsAffected == 0 {
 		return errors.New("task not found")
 	}
+	store.reportChange()
 	return nil
 }
 

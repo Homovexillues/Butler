@@ -9,18 +9,24 @@ import (
 
 func buildRegistry(config config.Config) *notify.Registry {
 	registry := notify.NewRegistry()
+	register := func(n notify.Notifier) {
+		if err := registry.Register(n); err != nil {
+			slog.Error("fail to register notifier", "error", err)
+		} else {
+			slog.Info("notifier registered", "channel", n.Name())
+		}
+	}
 
-	registry.Register(notify.SystemNotifier{})
+	register(notify.SystemNotifier{})
 
-	registry.Register(notify.MessageboxNotifier{})
+	register(notify.MessageboxNotifier{})
 
 	mqttConfig := config.Mqtt
 	mqttNotifier, err := notify.NewMqttNotifier(mqttConfig.Address, mqttConfig.Topic, mqttConfig.Username, mqttConfig.Password, mqttConfig.CertFile, mqttConfig.KeyFile, mqttConfig.SkipVerify)
 	if err != nil {
 		slog.Error("fail to make notifier", "channel", notify.ChannelMQTT, "err", err)
 	} else {
-		slog.Info("notifier registered", "channel", notify.ChannelMQTT)
-		registry.Register(mqttNotifier)
+		register(mqttNotifier)
 	}
 
 	emailConfig := config.Email
@@ -28,8 +34,7 @@ func buildRegistry(config config.Config) *notify.Registry {
 	if err != nil {
 		slog.Error("fail to make notifier", "channel", notify.ChannelEmail, "err", err)
 	} else {
-		slog.Info("notifier registered", "channel", notify.ChannelEmail)
-		registry.Register(emailNotifier)
+		register(emailNotifier)
 	}
 	return registry
 }
