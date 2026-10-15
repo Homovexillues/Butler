@@ -98,13 +98,7 @@ func ensureFile(path string, fileMode os.FileMode) error {
 		}
 		return err
 	}
-	defer func() {
-		err = file.Close()
-	}()
-	if err != nil {
-		return err
-	}
-	return nil
+	return file.Close()
 }
 
 func (cfg Config) ValidateConfig() []error {

@@ -2,6 +2,7 @@ package action
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -17,7 +18,7 @@ type CommandAction struct {
 func (a CommandAction) Execute(ctx context.Context) (Result, error) {
 	if a.Command == "" {
 		errorInfo := "command program is empty"
-		return Result{Output: errorInfo}, fmt.Errorf(errorInfo)
+		return Result{Output: errorInfo}, errors.New(errorInfo)
 	}
 
 	cmd := exec.CommandContext(ctx, a.Command, a.Args...)

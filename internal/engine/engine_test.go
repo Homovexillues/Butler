@@ -1,116 +1,152 @@
 package engine
 
 import (
-	"context"
-	"testing"
-	"time"
-
 	"butler/internal/action"
 	"butler/internal/model"
 	"butler/internal/notify"
 	"butler/internal/schedule"
+	"context"
+	"strings"
+	"testing"
+	"time"
 )
 
-// TestRun_触发最近的Once并产生通知请求 验证 Engine 会等待异步 Action
-// 完成、接收 actionResult，并在成功后更新 LastFired。
-func TestRun_触发最近的Once并产生通知请求(t *testing.T) {
-	triggerAt := time.Now().Add(50 * time.Millisecond)
-	lastFired := time.Time{}
-	node := &model.Node{
-		Title:     "测试通知",
-		Schedule:  schedule.Once{At: triggerAt},
-		LastFired: &lastFired,
-		Action: action.NotifyAction{
-			Channels: []string{"system"},
-			Message: notify.Message{
-				Title: "测试通知",
-				Body:  "测试正文",
-			},
-		},
+func TestNextSelectsEarliestAndSkipsRunning(t *testing.T) {
+	now := time.Date(2026, 10, 15, 9, 0, 0, 0, time.UTC)
+	last := now.Add(-time.Hour)
+	nodes := []*model.Node{nil, {ID: 9},
+		{ID: 1, Schedule: schedule.Once{At: now.Add(time.Hour)}},
+		{ID: 2, Schedule: schedule.Once{At: now.Add(-time.Minute)}, LastFired: &last},
+		{ID: 3, Schedule: schedule.Once{At: now.Add(-2 * time.Hour)}},
 	}
-
-	requests := make(chan notify.Request, 1)
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-	defer cancel()
-
-	saved := make(chan struct{}, 1)
-	done := make(chan struct{})
-	go func() {
-		Run(ctx, []*model.Node{node}, requests, func() error {
-			saved <- struct{}{}
-			return nil
-		})
-		close(done)
-	}()
-
-	select {
-	case request := <-requests:
-		if len(request.Channels) != 1 || request.Channels[0] != "system" {
-			t.Errorf("通知渠道 = %v，期望 [system]", request.Channels)
-		}
-		if request.Message.Title != "测试通知" {
-			t.Errorf("通知标题 = %q，期望 测试通知", request.Message.Title)
-		}
-		// NotifyAction 会等待消息循环回传发送结果。这里模拟通知成功，
-		// 否则 Engine 会一直等待 Action 完成，无法更新 LastFired。
-		request.Result <- nil
-	case <-ctx.Done():
-		t.Fatal("Action 没有在超时前产生通知请求")
+	running := map[int64]bool{}
+	index, at, ok := Next(nodes, running, now)
+	if !ok || index != 3 || !at.Equal(now.Add(-time.Minute)) {
+		t.Fatalf("next = %d %v %v", index, at, ok)
 	}
-
-	select {
-	case <-done:
-	case <-ctx.Done():
-		t.Fatal("Run 未在超时内结束，可能没有处理 Action 的执行结果")
+	if *nodes[3].LastFired != last || len(running) != 0 {
+		t.Fatal("Next modified inputs")
 	}
-
-	if node.LastFired == nil || node.LastFired.IsZero() {
-		t.Fatal("Action 成功后没有更新 LastFired")
+	running[2] = true
+	index, _, ok = Next(nodes, running, now)
+	if !ok || index != 2 {
+		t.Fatalf("selected running task: %d %v", index, ok)
 	}
-	if node.LastFired.Before(triggerAt) {
-		t.Fatalf("LastFired = %s，早于计划触发时间 %s", node.LastFired, triggerAt)
-	}
-
-	select {
-	case <-saved:
-	default:
-		t.Fatal("Action 成功后没有调用状态保存函数")
+	if _, _, ok := Next(nil, nil, now); ok {
+		t.Fatal("empty list has a next task")
 	}
 }
 
-// TestRun_ctx取消能干净退出 验证等待未来任务时，ctx 取消可以立即停止 Engine。
-func TestRun_ctx取消能干净退出(t *testing.T) {
-	lastFired := time.Time{}
-	node := &model.Node{
-		Title:     "未来任务",
-		Schedule:  schedule.Once{At: time.Now().Add(time.Hour)},
-		LastFired: &lastFired,
-		Action: action.NotifyAction{
-			Channels: []string{"system"},
-			Message:  notify.Message{Title: "未来任务"},
-		},
-	}
+type testAction struct {
+	entered chan struct{}
+	release <-chan struct{}
+}
 
-	requests := make(chan notify.Request, 1)
-	ctx, cancel := context.WithCancel(context.Background())
-	done := make(chan struct{})
-
-	go func() {
-		Run(ctx, []*model.Node{node}, requests, func() error { return nil })
-		close(done)
-	}()
-
-	cancel()
-
+func (a testAction) Execute(ctx context.Context) (action.Result, error) {
+	close(a.entered)
 	select {
-	case <-done:
-	case <-time.After(time.Second):
-		t.Fatal("ctx 取消后 Run 未及时退出")
+	case <-a.release:
+		return action.Result{Output: "command output"}, nil
+	case <-ctx.Done():
+		return action.Result{}, ctx.Err()
 	}
+}
 
+type savedState struct {
+	id    int64
+	fired time.Time
+}
+
+func startTestEngine(t *testing.T) (context.Context, context.CancelFunc, chan []*model.Node, <-chan notify.Request, <-chan savedState) {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	nodes := make(chan []*model.Node, 4)
+	requests := make(chan notify.Request, 4)
+	saved := make(chan savedState, 4)
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		Run(ctx, nodes, requests, func(id int64, at time.Time) error { saved <- savedState{id, at}; return nil })
+	}()
+	t.Cleanup(func() {
+		cancel()
+		select {
+		case <-done:
+		case <-time.After(time.Second):
+			t.Error("engine did not stop")
+		}
+	})
+	return ctx, cancel, nodes, requests, saved
+}
+
+func TestRunLoadsReminderAndPersistsCompletion(t *testing.T) {
+	ctx, _, updates, requests, saved := startTestEngine(t)
+	at := time.Now().Add(100 * time.Millisecond)
+	node := &model.Node{ID: 7, Title: "提醒", Body: "正文", Channels: []notify.Channel{notify.ChannelSystem}, Schedule: schedule.Once{At: at}}
+	// Engine begins empty and waits for this initial snapshot.
+	updates <- []*model.Node{node}
 	select {
 	case request := <-requests:
-		t.Errorf("未来任务不应产生通知请求，实际得到 %+v", request)
-	default:
+		if request.Message.Title != node.Title || request.Message.Body != node.Body || len(request.Channels) != 1 || request.Channels[0] != notify.ChannelSystem {
+			t.Fatalf("request = %+v", request)
+		}
+	case <-ctx.Done():
+		t.Fatal("no reminder")
 	}
+	select {
+	case state := <-saved:
+		if state.id != 7 || state.fired.Before(at) {
+			t.Fatalf("saved = %+v", state)
+		}
+	case <-ctx.Done():
+		t.Fatal("state not saved")
+	}
+	// Snapshot copies are owned by the engine, not written through caller pointers.
+	if node.LastFired != nil {
+		t.Fatal("source node was mutated")
+	}
+}
+
+func TestRunCommandReloadWhileInFlight(t *testing.T) {
+	ctx, _, updates, requests, saved := startTestEngine(t)
+	entered, release := make(chan struct{}), make(chan struct{})
+	node := &model.Node{ID: 8, Title: "命令", Channels: []notify.Channel{notify.ChannelMQTT}, Schedule: schedule.Once{At: time.Now().Add(100 * time.Millisecond)}, Action: testAction{entered, release}}
+	updates <- []*model.Node{node}
+	select {
+	case <-entered:
+	case <-ctx.Done():
+		t.Fatal("action not started")
+	}
+	replacement := *node
+	replacement.Body = "new configuration"
+	updates <- []*model.Node{&replacement}
+	close(release)
+	select {
+	case request := <-requests:
+		if !strings.Contains(request.Message.Body, "command output") {
+			t.Fatalf("output missing: %+v", request)
+		}
+	case <-ctx.Done():
+		t.Fatal("no command result")
+	}
+	select {
+	case state := <-saved:
+		if state.id != 8 {
+			t.Fatal(state)
+		}
+	case <-ctx.Done():
+		t.Fatal("state not saved")
+	}
+	// Both snapshots describe the same once task, so no duplicate notification.
+	select {
+	case request := <-requests:
+		t.Fatalf("duplicate: %+v", request)
+	case <-time.After(100 * time.Millisecond):
+	}
+}
+
+func TestRunCancellationWithClosedUpdates(t *testing.T) {
+	_, cancel, updates, _, _ := startTestEngine(t)
+	close(updates)
+	cancel()
 }

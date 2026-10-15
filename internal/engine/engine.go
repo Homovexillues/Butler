@@ -43,7 +43,6 @@ func Run(ctx context.Context, nodesChannel <-chan []*model.Node, requests chan<-
 	results := make(chan actionResult, 10)
 	running := make(map[int64]bool)
 	for {
-		var soonest time.Time
 		now := time.Now()
 		index, soonest, found := Next(nodes, running, now)
 		var timer *time.Timer

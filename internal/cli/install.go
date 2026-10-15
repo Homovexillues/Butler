@@ -107,7 +107,7 @@ var updateCmd = &cobra.Command{
 			return err
 		}
 		if status == service.StatusUnknown {
-			return fmt.Errorf("unkown service status,update has been canceled")
+			return fmt.Errorf("unknown service status, update has been canceled")
 		}
 		wasRunning := status == service.StatusRunning
 		if wasRunning {

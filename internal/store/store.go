@@ -1,4 +1,4 @@
-// Package store is a librarry that uses ORM to persist the state of task nodes
+// Package store persists tasks and their execution state using GORM.
 package store
 
 import (
@@ -37,7 +37,7 @@ func NewStore(dbPath string) (*Store, error) {
 		db:           db,
 		nodesChannel: make(chan struct{}, 1),
 	}
-	return &store, err
+	return &store, nil
 }
 
 func (store *Store) reportChange() {

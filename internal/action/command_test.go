@@ -5,129 +5,104 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
-	"time"
-
-	"butler/internal/notify"
 )
 
-// TestCommandActionHelperProcess 由下面的测试把当前测试二进制作为子进程启动。
-// 这样不依赖 bash、cmd.exe 等外部 shell，Linux 和 Windows 都能运行。
+// Run the test binary as a helper, without depending on a platform shell.
 func TestCommandActionHelperProcess(t *testing.T) {
 	if os.Getenv("BUTLER_COMMAND_HELPER") != "1" {
 		return
 	}
-
-	fmt.Fprint(os.Stdout, os.Getenv("BUTLER_COMMAND_OUTPUT"))
+	if _, err := fmt.Fprint(os.Stdout, os.Getenv("BUTLER_COMMAND_OUTPUT")); err != nil {
+		t.Fatalf("write helper stdout: %v", err)
+	}
+	if _, err := fmt.Fprint(os.Stderr, os.Getenv("BUTLER_COMMAND_STDERR")); err != nil {
+		t.Fatalf("write helper stderr: %v", err)
+	}
+	if os.Getenv("BUTLER_COMMAND_CWD") == "1" {
+		cwd, err := os.Getwd()
+		if err != nil {
+			t.Fatalf("get helper working directory: %v", err)
+		}
+		if _, err := fmt.Fprint(os.Stdout, cwd); err != nil {
+			t.Fatalf("write helper working directory: %v", err)
+		}
+	}
 	if os.Getenv("BUTLER_COMMAND_FAIL") == "1" {
 		os.Exit(2)
 	}
 	os.Exit(0)
 }
 
-func TestCommandAction_命令成功且通知成功(t *testing.T) {
-	action := helperCommandAction("采集完成", false)
-	requests := make(chan notify.Request, 1)
-	done := make(chan error, 1)
-
-	go func() {
-		done <- action.Execute(context.Background(), requests)
-	}()
-
-	request := waitCommandRequest(t, requests)
-	if request.Message.Title != "command "+os.Args[0]+" execute result" {
-		t.Errorf("通知标题 = %q", request.Message.Title)
-	}
-	if request.Message.Body != "采集完成" {
-		t.Errorf("通知正文 = %q，期望 %q", request.Message.Body, "采集完成")
-	}
-	request.Result <- nil
-
-	if err := waitCommandResult(t, done); err != nil {
-		t.Fatalf("Execute() 返回错误：%v", err)
-	}
-}
-
-func TestCommandAction_命令成功但通知失败仍返回成功(t *testing.T) {
-	action := helperCommandAction("采集完成", false)
-	requests := make(chan notify.Request, 1)
-	done := make(chan error, 1)
-
-	go func() {
-		done <- action.Execute(context.Background(), requests)
-	}()
-
-	request := waitCommandRequest(t, requests)
-	request.Result <- errors.New("所有通知渠道均不可用")
-
-	if err := waitCommandResult(t, done); err != nil {
-		t.Fatalf("命令已经成功，通知失败不应使 CommandAction 失败：%v", err)
-	}
-}
-
-func TestCommandAction_命令失败返回错误且不发送通知(t *testing.T) {
-	action := helperCommandAction("执行失败", true)
-	requests := make(chan notify.Request, 1)
-
-	err := action.Execute(context.Background(), requests)
-	if err == nil {
-		t.Fatal("命令退出码非零，Execute() 应返回错误")
-	}
-	if !strings.Contains(err.Error(), "执行失败") {
-		t.Fatalf("错误没有保留命令输出：%v", err)
-	}
-
-	select {
-	case request := <-requests:
-		t.Fatalf("命令失败时不应发送成功结果通知，实际得到 %+v", request)
-	default:
-	}
-}
-
-func TestCommandAction_空命令返回错误(t *testing.T) {
-	err := (CommandAction{}).Execute(context.Background(), make(chan notify.Request, 1))
-	if err == nil {
-		t.Fatal("空命令应返回错误")
-	}
-}
-
 func helperCommandAction(output string, fail bool) CommandAction {
-	env := map[string]string{
-		"BUTLER_COMMAND_HELPER": "1",
-		"BUTLER_COMMAND_OUTPUT": output,
-	}
+	env := map[string]string{"BUTLER_COMMAND_HELPER": "1", "BUTLER_COMMAND_OUTPUT": output}
 	if fail {
 		env["BUTLER_COMMAND_FAIL"] = "1"
 	}
+	return CommandAction{Command: os.Args[0], Args: []string{"-test.run=^TestCommandActionHelperProcess$"}, Env: env}
+}
 
-	return CommandAction{
-		Command: os.Args[0],
-		Args: []string{
-			"-test.run=^TestCommandActionHelperProcess$",
-		},
-		Env: env,
+func TestCommandActionReturnsOutput(t *testing.T) {
+	for _, output := range []string{"", "采集完成"} {
+		t.Run(output, func(t *testing.T) {
+			result, err := helperCommandAction(output, false).Execute(context.Background())
+			if err != nil {
+				t.Fatal(err)
+			}
+			if result.Output != output {
+				t.Fatalf("output = %q, want %q", result.Output, output)
+			}
+		})
 	}
 }
 
-func waitCommandRequest(t *testing.T, requests <-chan notify.Request) notify.Request {
-	t.Helper()
-	select {
-	case request := <-requests:
-		return request
-	case <-time.After(2 * time.Second):
-		t.Fatal("没有在超时前收到命令结果通知")
-		return notify.Request{}
+func TestCommandActionFailurePreservesOutputAndExitError(t *testing.T) {
+	command := helperCommandAction("partial output", true)
+	command.Env["BUTLER_COMMAND_STDERR"] = "failure detail"
+	result, err := command.Execute(context.Background())
+	var exitErr *exec.ExitError
+	if !errors.As(err, &exitErr) || exitErr.ExitCode() != 2 {
+		t.Fatalf("expected wrapped exit code 2: %v", err)
+	}
+	for _, part := range []string{"partial output", "failure detail"} {
+		if !strings.Contains(result.Output, part) {
+			t.Fatalf("missing %q in output %q", part, result.Output)
+		}
 	}
 }
 
-func waitCommandResult(t *testing.T, done <-chan error) error {
-	t.Helper()
-	select {
-	case err := <-done:
-		return err
-	case <-time.After(2 * time.Second):
-		t.Fatal("CommandAction 没有在超时前结束")
-		return nil
+func TestCommandActionWorkingDirectory(t *testing.T) {
+	dir := t.TempDir()
+	command := helperCommandAction("", false)
+	command.Dir = dir
+	command.Env["BUTLER_COMMAND_CWD"] = "1"
+	result, err := command.Execute(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	want, err := filepath.EvalSymlinks(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Output != want {
+		t.Fatalf("cwd = %q, want %q", result.Output, want)
+	}
+}
+
+func TestCommandActionRejectsEmptyCommand(t *testing.T) {
+	if _, err := (CommandAction{}).Execute(context.Background()); err == nil {
+		t.Fatal("empty command accepted")
+	}
+}
+
+func TestCommandActionCanceledContext(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	_, err := helperCommandAction("should not run", false).Execute(ctx)
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("expected cancellation, got %v", err)
 	}
 }

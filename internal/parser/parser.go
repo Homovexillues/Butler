@@ -112,9 +112,8 @@ func MakeAction(actionType action.ActionType, expression string) (action.Action,
 }
 
 func TaskToNode(task model.Task) (model.Node, error) {
-	var node model.Node
 	if err := notify.ValidateChannels(task.Channels); err != nil {
-		return node, fmt.Errorf("task %d: %w", task.ID, err)
+		return model.Node{}, fmt.Errorf("task %d: %w", task.ID, err)
 	}
 	taskSchedule, err := MakeSchedule(task.ScheduleType, task.ScheduleExpression, task.ScheduleOffset)
 	if err != nil {
@@ -124,7 +123,7 @@ func TaskToNode(task model.Task) (model.Node, error) {
 	if err != nil {
 		return model.Node{}, err
 	}
-	node = model.Node{
+	node := model.Node{
 		ID:        task.ID,
 		Title:     task.Title,
 		Body:      task.Body,

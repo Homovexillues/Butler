@@ -323,7 +323,6 @@ func setupLogger() (closeFn func() error, err error) {
 }
 
 func init() {
-	var err error
 	path, err := getExecutablePath()
 	if err != nil {
 		log.Fatal(err)

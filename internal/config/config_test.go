@@ -1,134 +1,117 @@
 package config
 
 import (
-	"bytes"
+	"butler/internal/model"
+	"butler/internal/notify"
+	"context"
 	"encoding/json"
-	"errors"
-	"io/fs"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
-	"time"
-
-	"butler/internal/parser"
 )
 
-func TestSavePlan_原子写入并能重新加载状态(t *testing.T) {
-	configRoot := t.TempDir()
-	t.Setenv("XDG_CONFIG_HOME", configRoot)
-
-	firedAt := time.Date(
-		2026,
-		8,
-		26,
-		15,
-		30,
-		0,
-		0,
-		time.FixedZone("CST", 8*60*60),
-	)
-	plan := &parser.PlanNode{
-		Children: []parser.PlanNode{
-			{
-				Title:     "已执行任务",
-				LastFired: firedAt,
-			},
-			{
-				Title: "未执行任务",
-			},
-		},
-	}
-
-	if err := SavePlan(plan); err != nil {
-		t.Fatalf("SavePlan() 返回错误：%v", err)
-	}
-
-	loaded, err := LoadPlan()
+func isolatedConfigRoot(t *testing.T) string {
+	t.Helper()
+	root := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", root)
+	t.Setenv("APPDATA", root)
+	t.Setenv("HOME", root)
+	dir, err := os.UserConfigDir()
 	if err != nil {
-		t.Fatalf("LoadPlan() 返回错误：%v", err)
+		t.Fatal(err)
 	}
-	if len(loaded.Children) != 2 {
-		t.Fatalf("重新加载后的节点数量 = %d，期望 2", len(loaded.Children))
+	dir = filepath.Join(dir, "butler")
+	if err := os.MkdirAll(dir, 0700); err != nil {
+		t.Fatal(err)
 	}
-	if !loaded.Children[0].LastFired.Equal(firedAt) {
-		t.Fatalf(
-			"重新加载的 LastFired = %s，期望 %s",
-			loaded.Children[0].LastFired,
-			firedAt,
-		)
-	}
-	if !loaded.Children[1].LastFired.IsZero() {
-		t.Fatalf("未执行任务的 LastFired = %s，期望零值", loaded.Children[1].LastFired)
-	}
+	return dir
+}
 
-	planPath := filepath.Join(configRoot, "butler", "plan.jsonc")
-	raw, err := os.ReadFile(planPath)
+func TestLoadConfigJSONCAndCertificatePath(t *testing.T) {
+	dir := isolatedConfigRoot(t)
+	raw := `{// comment
+ "mqtt":{"address":":8883","topic":"test","certfile":"certs/server.crt","keyfile":"certs/server.key"},
+ "email":{"host":"smtp.example.test"},
+ }`
+	if err := os.WriteFile(filepath.Join(dir, "config.jsonc"), []byte(raw), 0600); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := LoadConfig()
 	if err != nil {
-		t.Fatalf("读取保存后的计划文件：%v", err)
+		t.Fatal(err)
 	}
-	if got := bytes.Count(raw, []byte(`"LastFired"`)); got != 1 {
-		t.Fatalf("计划文件中的 LastFired 字段数量 = %d，期望 1", got)
+	if cfg.Mqtt.Address != ":8883" || cfg.Mqtt.Topic != "test" || cfg.Mqtt.CertFile != filepath.Join(dir, "certs/server.crt") || cfg.Email.Host != "smtp.example.test" {
+		t.Fatalf("config=%+v", cfg)
 	}
-
-	var document struct {
-		Children []map[string]json.RawMessage
-	}
-	if err := json.Unmarshal(raw, &document); err != nil {
-		t.Fatalf("解析保存后的计划文件：%v", err)
-	}
-	if len(document.Children) != 2 {
-		t.Fatalf("保存后的节点数量 = %d，期望 2", len(document.Children))
-	}
-
-	assertJSONKeys(
-		t,
-		document.Children[0],
-		[]string{"Title", "LastFired"},
-	)
-	assertJSONKeys(
-		t,
-		document.Children[1],
-		[]string{"Title"},
-	)
-
-	var lastFiredText string
-	if err := json.Unmarshal(
-		document.Children[0]["LastFired"],
-		&lastFiredText,
-	); err != nil {
-		t.Fatalf("解析 LastFired 字符串：%v", err)
-	}
-	if want := firedAt.Format(time.RFC3339Nano); lastFiredText != want {
-		t.Fatalf("LastFired 字符串 = %q，期望 %q", lastFiredText, want)
-	}
-
-	tempPath := planPath + ".tmp"
-	if _, err := os.Stat(tempPath); !errors.Is(err, fs.ErrNotExist) {
-		t.Fatalf("临时文件 %s 在成功替换后仍然存在，stat error = %v", tempPath, err)
+	// Existing user configuration must not be overwritten by loading it.
+	got, err := os.ReadFile(filepath.Join(dir, "config.jsonc"))
+	if err != nil || string(got) != raw {
+		t.Fatalf("configuration overwritten: %v", err)
 	}
 }
 
-func assertJSONKeys(
-	t *testing.T,
-	object map[string]json.RawMessage,
-	want []string,
-) {
-	t.Helper()
-
-	if len(object) != len(want) {
-		t.Fatalf("JSON 字段 = %v，期望 %v", mapKeys(object), want)
-	}
-	for _, key := range want {
-		if _, ok := object[key]; !ok {
-			t.Fatalf("JSON 字段 = %v，缺少 %q", mapKeys(object), key)
+func TestLoadConfigRejectsEmptyOrMalformed(t *testing.T) {
+	dir := isolatedConfigRoot(t)
+	for _, raw := range []string{"", "{bad"} {
+		if err := os.WriteFile(filepath.Join(dir, "config.jsonc"), []byte(raw), 0600); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := LoadConfig(); err == nil {
+			t.Fatalf("accepted %q", raw)
 		}
 	}
 }
 
-func mapKeys(object map[string]json.RawMessage) []string {
-	keys := make([]string, 0, len(object))
-	for key := range object {
-		keys = append(keys, key)
+func TestValidateConfig(t *testing.T) {
+	if errs := (Config{}).ValidateConfig(); len(errs) != 0 {
+		t.Fatal(errs)
 	}
-	return keys
+	valid := Config{Mqtt: MqttSettings{Address: ":8883", Topic: "test"}, Email: EmailSettings{Host: "smtp.example.test", Port: 465, Username: "user", Authcode: "secret", From: "from@example.test", To: []string{"to@example.test"}}}
+	if errs := valid.ValidateConfig(); len(errs) != 0 {
+		t.Fatal(errs)
+	}
+	errs := (Config{Mqtt: MqttSettings{Username: "user"}, Email: EmailSettings{Host: "smtp.example.test"}}).ValidateConfig()
+	for _, prefix := range []string{"mqtt:", "email:"} {
+		found := false
+		for _, err := range errs {
+			if strings.Contains(err.Error(), prefix) {
+				found = true
+			}
+		}
+		if !found {
+			t.Fatalf("missing %s errors: %v", prefix, errs)
+		}
+	}
+}
+
+func TestLoadDatabasePersistsAcrossReopen(t *testing.T) {
+	isolatedConfigRoot(t)
+	s, err := LoadDatabase()
+	if err != nil {
+		t.Fatal(err)
+	}
+	id, err := s.Add(context.Background(), model.Task{Title: "persisted", Channels: []notify.Channel{notify.ChannelSystem}, ActionExpression: json.RawMessage(`{}`)})
+	if err != nil {
+		if closeErr := s.Close(); closeErr != nil {
+			t.Errorf("close database after failed insert: %v", closeErr)
+		}
+		t.Fatal(err)
+	}
+	if err := s.Close(); err != nil {
+		t.Fatal(err)
+	}
+	s, err = LoadDatabase()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := s.Close(); err != nil {
+			t.Errorf("close database: %v", err)
+		}
+	})
+	task, err := s.Get(context.Background(), id)
+	if err != nil || task.Title != "persisted" {
+		t.Fatalf("got %+v, %v", task, err)
+	}
 }

@@ -17,10 +17,7 @@ func NewIntervalSchedule(expression string) (Interval, error) {
 		if len(section) <= 1 {
 			return interval, fmt.Errorf("invalid interval section %q: expected a number followed by d, h, m, or s", section)
 		}
-		numStr := section[:len(section)-1] // 或者用你想判断的单位                                                                                                                                                                                                │
-		if numStr == "" {
-			return interval, fmt.Errorf("invalid interval section %q: number is missing", section)
-		}
+		numStr := section[:len(section)-1]
 		num, err := strconv.Atoi(numStr)
 		if err != nil {
 			return interval, err
@@ -34,8 +31,6 @@ func NewIntervalSchedule(expression string) (Interval, error) {
 			interval.every += time.Duration(num) * time.Minute
 		case strings.HasSuffix(section, "s"):
 			interval.every += time.Duration(num) * time.Second
-		case section == "":
-			continue
 		}
 	}
 	return interval, nil

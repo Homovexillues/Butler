@@ -5,7 +5,6 @@ import (
 	"crypto/tls"
 	"encoding/json"
 	"fmt"
-	"time"
 
 	mqtt "github.com/mochi-mqtt/server/v2"
 	"github.com/mochi-mqtt/server/v2/hooks/auth"
@@ -17,10 +16,7 @@ type mqttNotifier struct {
 	Topic  string
 }
 
-const (
-	qosAtleastOnce    = 1
-	connectionTimeout = 3 * time.Second
-)
+const qosAtleastOnce = 1
 
 func NewMqttNotifier(listen, topic, username, password, certFile, keyFile string, insecure bool) (Notifier, error) {
 	if listen == "" || topic == "" || username == "" || password == "" {
