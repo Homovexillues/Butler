@@ -60,6 +60,13 @@ func (store *Store) Close() error {
 }
 
 func (store *Store) Add(ctx context.Context, task model.Task) (int64, error) {
+	taskExist, err := store.Exist(ctx, task)
+	if err != nil {
+		return -1, err
+	}
+	if taskExist {
+		return -1, nil
+	}
 	if err := store.db.WithContext(ctx).Create(&task).Error; err != nil {
 		return -1, err
 	}
@@ -112,4 +119,18 @@ func (store *Store) GetAll(ctx context.Context) ([]model.Task, error) {
 		return nil, err
 	}
 	return rows, nil
+}
+
+func (store *Store) Exist(ctx context.Context, task model.Task) (bool, error) {
+	var r model.Task
+	err := store.db.WithContext(ctx).
+		Where("title = ? AND body = ?", task.Title, task.Body).
+		First(&r).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	return true, nil
 }
