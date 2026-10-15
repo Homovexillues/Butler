@@ -49,9 +49,8 @@ var validateCmd = &cobra.Command{
 func validateTasks(tasks []model.Task) error {
 	var errs []error
 	for _, task := range tasks {
-		if _, err := parser.TaskToNode(task); err != nil {
-			errs = append(errs, fmt.Errorf("task %d (%s): %w", task.ID, task.Title, err))
-		}
+		err := parser.ValidateTask(task)
+		errs = append(errs, err)
 	}
 	return errors.Join(errs...)
 }

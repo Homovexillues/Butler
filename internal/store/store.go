@@ -41,7 +41,10 @@ func NewStore(dbPath string) (*Store, error) {
 }
 
 func (store *Store) reportChange() {
-	store.nodesChannel <- struct{}{}
+	select {
+	case store.nodesChannel <- struct{}{}:
+	default:
+	}
 }
 
 func (store *Store) Changes() <-chan struct{} {

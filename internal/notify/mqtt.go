@@ -74,6 +74,10 @@ func NewMqttNotifier(listen, topic, username, password, certFile, keyFile string
 	return &mqttNotifier{Server: broker, Topic: topic}, nil
 }
 
+func (mqttNotifier mqttNotifier) Close() error {
+	return mqttNotifier.Server.Close()
+}
+
 func (mqttNotifier mqttNotifier) Name() string {
 	return "mqtt"
 }

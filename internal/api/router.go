@@ -83,7 +83,7 @@ func NewRouter(store *store.Store) *gin.Engine {
 			})
 			return
 		}
-		if err := notify.ValidateChannels(task.Channels); err != nil {
+		if err := parser.ValidateTask(task); err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 			return
 		}
@@ -122,7 +122,7 @@ func NewRouter(store *store.Store) *gin.Engine {
 			})
 			return
 		}
-		if err := notify.ValidateChannels(task.Channels); err != nil {
+		if err := parser.ValidateTask(task); err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 			return
 		}

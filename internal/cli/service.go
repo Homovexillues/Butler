@@ -30,6 +30,7 @@ import (
 type program struct {
 	cancel   context.CancelFunc
 	server   *http.Server
+	closeDB  func() error
 	closeLog func() error
 }
 
@@ -55,7 +56,7 @@ func (p *program) Start(s service.Service) error {
 	if err != nil {
 		return fmt.Errorf("fail to load database:\n%w", err)
 	}
-
+	p.closeDB = store.Close
 	registry := buildRegistry(cfg)
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -165,6 +166,11 @@ func (p *program) Stop(s service.Service) error {
 		defer cancel()
 		_ = p.server.Shutdown(ctx)
 	}
+	if p.closeDB != nil {
+		if err := p.closeDB(); err != nil {
+			return err
+		}
+	}
 	if p.closeLog != nil {
 		return p.closeLog()
 	}
@@ -209,12 +215,78 @@ func loadNodes(ctx context.Context, s *store.Store) ([]*model.Node, error) {
 	return nodes, nil
 }
 
-func newService(userName string) (service.Service, error) {
+func getExecutablePath() (string, error) {
+	switch runtime.GOOS {
+	case "linux":
+		return "/usr/local/bin/butler", nil
+	case "windows":
+		dir := os.Getenv("ProgramFiles")
+		if dir == "" || !filepath.IsAbs(dir) {
+			return "", fmt.Errorf("invalid ProgramFiles directory")
+		}
+		return filepath.Join(dir, "Butler", "butler.exe"), nil
+	default:
+		return "", fmt.Errorf("unsupported platform %q", runtime.GOOS)
+	}
+}
+
+func copyExecutable(dst string) (err error) {
+	src, err := os.Executable()
+	if err != nil {
+		return fmt.Errorf("locate current executable: %w", err)
+	}
+	inFile, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		closeErr := inFile.Close()
+		if err == nil {
+			err = closeErr
+		}
+	}()
+	srcInfo, err := inFile.Stat()
+	if err != nil {
+		return err
+	}
+	dstInfo, statErr := os.Stat(dst)
+	if statErr == nil {
+		if os.SameFile(srcInfo, dstInfo) {
+			return nil
+		}
+	} else if !os.IsNotExist(statErr) {
+		return statErr
+	}
+	if err := os.MkdirAll(filepath.Dir(dst), 0o0755); err != nil {
+		return err
+	}
+	outFile, err := os.OpenFile(dst, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o755)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		closeErr := outFile.Close()
+		if err == nil {
+			err = closeErr
+		}
+		if err != nil {
+			_ = os.Remove(dst)
+		}
+	}()
+
+	if _, err = io.Copy(outFile, inFile); err != nil {
+		return err
+	}
+	return outFile.Sync()
+}
+
+func newService(userName, executable string) (service.Service, error) {
 	cfg := &service.Config{
 		Name:        "butler",
 		DisplayName: "Butler 电子管家 顾霈圭",
 		Description: "定时调度通知服务",
 		Arguments:   []string{"serve"},
+		Executable:  executable,
 		UserName:    userName, // 空字符串时 kardianos 不写 User=
 	}
 	return service.New(&program{}, cfg)
@@ -252,9 +324,13 @@ func setupLogger() (closeFn func() error, err error) {
 
 func init() {
 	var err error
-	svc, err = newService("")
+	path, err := getExecutablePath()
 	if err != nil {
 		log.Fatal(err)
 	}
-	rootCmd.AddCommand(installCmd, uninstallCmd, startCmd, stopCmd)
+	svc, err = newService("", path)
+	if err != nil {
+		log.Fatal(err)
+	}
+	rootCmd.AddCommand(installCmd, uninstallCmd, startCmd, stopCmd, updateCmd)
 }

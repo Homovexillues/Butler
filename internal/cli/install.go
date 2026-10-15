@@ -2,9 +2,11 @@ package cli
 
 import (
 	"bufio"
+	"errors"
 	"fmt"
 	"os"
 	"os/user"
+	"runtime"
 	"strings"
 
 	"github.com/kardianos/service"
@@ -18,18 +20,26 @@ var installCmd = &cobra.Command{
 	Short: "把butler注册为systemd服务",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		username := installUser
-		if username == "" {
+		if username == "" && runtime.GOOS == "linux" {
 			u, err := askRunUser()
 			if err != nil {
 				return err
 			}
 			username = u
+			_, err = user.Lookup(username)
+			if err != nil {
+				return err
+			}
 		}
-		_, err := user.Lookup(username)
+		path, err := getExecutablePath()
 		if err != nil {
 			return err
 		}
-		s, err := newService(username)
+		s, err := newService(username, path)
+		if err != nil {
+			return err
+		}
+		err = copyExecutable(path)
 		if err != nil {
 			return err
 		}
@@ -82,6 +92,43 @@ var startCmd = &cobra.Command{
 	Short: "开始butler服务",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		return service.Control(svc, "start")
+	},
+}
+
+var updateCmd = &cobra.Command{
+	Use:   "update",
+	Short: "更新butler",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		status, err := svc.Status()
+		if err != nil {
+			if errors.Is(err, service.ErrNotInstalled) {
+				return fmt.Errorf("butler service is not installed, please execute install before update")
+			}
+			return err
+		}
+		if status == service.StatusUnknown {
+			return fmt.Errorf("unkown service status,update has been canceled")
+		}
+		wasRunning := status == service.StatusRunning
+		if wasRunning {
+			err := service.Control(svc, "stop")
+			if err != nil {
+				return err
+			}
+		}
+		path, err := getExecutablePath()
+		if err != nil {
+			return err
+		}
+		err = copyExecutable(path)
+		if err != nil {
+			return err
+		}
+		if wasRunning {
+			err = service.Control(svc, "start")
+			return err
+		}
+		return nil
 	},
 }
 
