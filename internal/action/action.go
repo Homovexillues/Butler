@@ -11,6 +11,12 @@ const (
 	ActionCommand ActionType = "command"
 )
 
+func AllActionTypes() []ActionType {
+	return []ActionType{
+		ActionCommand,
+	}
+}
+
 type Result struct {
 	Output string
 }

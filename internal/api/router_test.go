@@ -175,3 +175,60 @@ func TestWritesRejectInvalidTaskWithoutPersisting(t *testing.T) {
 		t.Fatalf("invalid rows persisted: %+v %v", rows, err)
 	}
 }
+
+// Management must remain usable when old tasks have expired or invalid schedules.
+func TestManagementListIncludesEditableTasks(t *testing.T) {
+	router, s := testRouter(t)
+	fixtures := []model.Task{fixtureTask(), fixtureTask(), fixtureTask()}
+	fixtures[0].Title = "never fired"
+	fixtures[1].Title = "expired"
+	fixtures[1].ScheduleType = schedule.ScheduleOnce
+	fixtures[1].ScheduleExpression = "2000-01-01 00:00:00"
+	fixtures[2].Title = "invalid legacy schedule"
+	fixtures[2].ScheduleExpression = "invalid"
+	for i := range fixtures {
+		id, err := s.Add(context.Background(), fixtures[i])
+		if err != nil {
+			t.Fatal(err)
+		}
+		fixtures[i].ID = id
+	}
+	response := apiCall(t, router, http.MethodGet, "/api/v1/tasks", nil)
+	if response.Code != http.StatusOK {
+		t.Fatalf("list: %d %s", response.Code, response.Body.String())
+	}
+	var rows []taskResponse
+	if err := json.Unmarshal(response.Body.Bytes(), &rows); err != nil {
+		t.Fatal(err)
+	}
+	if len(rows) != 3 {
+		t.Fatalf("rows: %+v", rows)
+	}
+	for i, row := range rows {
+		if !reflect.DeepEqual(row.Task, fixtures[i]) {
+			t.Fatalf("editable data lost: %+v", row.Task)
+		}
+	}
+	if rows[0].NextTriggeredAt == nil || rows[0].NextTriggeredAt.IsZero() {
+		t.Fatal("never-fired task has no estimate")
+	}
+	if rows[1].NextTriggeredAt != nil {
+		t.Fatal("expired task has a next trigger")
+	}
+	if rows[2].ScheduleError == "" {
+		t.Fatal("invalid schedule has no explanation")
+	}
+}
+
+func TestDuplicateAddReportsFailure(t *testing.T) {
+	router, _ := testRouter(t)
+	task := fixtureTask()
+	first := apiCall(t, router, http.MethodPost, "/api/v1/add", task)
+	if first.Code != http.StatusOK {
+		t.Fatal(first.Body.String())
+	}
+	second := apiCall(t, router, http.MethodPost, "/api/v1/add", task)
+	if second.Code < 400 {
+		t.Fatalf("duplicate reported success: %s", second.Body.String())
+	}
+}

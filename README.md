@@ -9,7 +9,7 @@ Butler 是一个自托管的定时任务与多渠道通知工具。任务和执�
 - 通知：系统桌面通知、消息框、邮件、MQTT。
 - MQTT：进程内运行 Mochi Broker，支持 TLS、用户名密码认证和通知主题订阅。
 - CLI：前台运行、任务列表、配置及任务校验、渠道测试、服务安装和更新。
-- HTTP：任务 CRUD，以及嵌入式页面入口。管理页面当前仍是占位内容，尚不能替代 API 管理任务。
+- HTTP：任务 CRUD，以及适用于手机和 PC 的嵌入式管理页面，支持搜索、新建、编辑和删除任务。
 
 旧版 `PlanNode` / `Children` 计划树已不再作为任务来源，`serve` 不读取 `plan.jsonc`。仓库中的 [SCHEMA.md](./SCHEMA.md) 描述的是旧版计划格式，不适用于当前 Task API；当前字段以 [Task 定义](./internal/model/task.go) 和下文为准。
 
@@ -181,9 +181,9 @@ Task 是平面任务，不再区分父分组和叶子节点，也没有渠道继
 
 | 方法与路径 | 用途 | 请求内容 |
 |---|---|---|
-| `GET /` | 嵌入式页面入口，目前为占位内容 | 无 |
+| `GET /` | 嵌入式任务管理页面 | 无 |
 | `GET /ping` | 返回 `pong` | 无 |
-| `GET /api/v1/tasks` | 任务摘要列表 | 无 |
+| `GET /api/v1/tasks` | 任务列表（含完整配置及下次触发时间） | 无 |
 | `POST /api/v1/add` | 创建 Task | Task 对象，省略 ID |
 | `POST /api/v1/get` | 查询完整 Task | `{"id": 1}` |
 | `POST /api/v1/update` | 更新 Task 配置 | 含 ID 的完整 Task 对象 |
@@ -209,7 +209,7 @@ curl -sS http://127.0.0.1:8191/api/v1/tasks
 
 服务进程内经 CRUD 成功写入的变更会通知 engine 重新加载任务；直接用其他进程修改 SQLite 不会触发这个内存通道。`config.jsonc` 的修改需要重启才能生效。
 
-`/tasks` 当前返回 `title`、`body`、`channels`、`lastFired`、`nextTriggeredAt`。注意摘要使用复数 `channels`，完整 Task 使用单数 `channel`。摘要暂不包含 ID 和启用状态；管理时请保留 `/add` 返回的 ID，按 ID 使用 `/get`。
+`/tasks` 返回完整 Task 字段及 `nextTriggeredAt`，并保留复数 `channels` 供列表客户端使用；提交 Task 仍使用单数 `channel`。停用或无后续触发时间时，`nextTriggeredAt` 为 `null`；调度配置解析失败时，该任务携带 `scheduleError`，不影响其他任务显示。
 
 ## CLI
 
@@ -268,7 +268,7 @@ Windows 使用系统服务 API，默认不询问 Linux 运行用户；指定普�
 
 ## 当前限制
 
-- `/tasks` 在 `LastFired` 为空时仍可能返回零时间；某个任务无后续时间或配置解析失败也可能使整个列表失败。可用 `/get` 查看单条完整任务。
+- 管理页面的下次触发时间由任务配置和上次执行时间计算；从未执行的间隔任务以查询时刻估算，不是 engine 运行状态的实时快照。
 - 调度、动作、偏移校验尚不覆盖全部业务错误；`validate` 通过不代表外部命令存在、证书可用或通知已送达。
 - 农历表达式当前借用公历月日解析，部分合法农历日期尚不能正确表达。
 - 通知渠道阻塞可能耗尽 worker，并在队列满时拖慢调度；退出时的后台任务等待和资源清理仍需完善。

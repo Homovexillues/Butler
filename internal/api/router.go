@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"time"
 
+	"butler/internal/model"
 	"butler/internal/notify"
 	"butler/internal/store"
 
@@ -16,11 +17,10 @@ import (
 var webFiles embed.FS
 
 type taskResponse struct {
-	Title           string           `json:"title"`
-	Body            string           `json:"body"`
+	model.Task
 	Channels        []notify.Channel `json:"channels"`
-	LastFired       *time.Time       `json:"lastFired"`
 	NextTriggeredAt *time.Time       `json:"nextTriggeredAt"`
+	ScheduleError   string           `json:"scheduleError,omitempty"`
 }
 
 func NewRouter(store *store.Store) *gin.Engine {
@@ -43,5 +43,7 @@ func NewRouter(store *store.Store) *gin.Engine {
 	protected.POST("/delete", deleteTaskHandler(store))
 	protected.POST("/update", updateTaskHandler(store))
 	protected.POST("/get", getTaskHandler(store))
+	protected.GET("/channels", getChannelsHandler())
+	protected.GET("/actios", getActionsHandler())
 	return router
 }

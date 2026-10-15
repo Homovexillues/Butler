@@ -65,7 +65,7 @@ func (store *Store) Add(ctx context.Context, task model.Task) (int64, error) {
 		return -1, err
 	}
 	if taskExist {
-		return -1, nil
+		return -1, errors.New("task with the same title and body already exists")
 	}
 	if err := store.db.WithContext(ctx).Create(&task).Error; err != nil {
 		return -1, err

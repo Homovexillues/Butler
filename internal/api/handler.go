@@ -4,7 +4,9 @@ import (
 	"net/http"
 	"time"
 
+	"butler/internal/action"
 	"butler/internal/model"
+	"butler/internal/notify"
 	"butler/internal/parser"
 	"butler/internal/store"
 
@@ -60,31 +62,24 @@ func listTaskHandler(store *store.Store) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		taskRows, err := store.GetAll(c.Request.Context())
 		if err != nil {
-			c.JSON(http.StatusBadRequest, err)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
 		}
 		tasks := make([]taskResponse, 0, len(taskRows))
+		now := time.Now()
 		for _, taskRow := range taskRows {
+			task := taskResponse{Task: taskRow, Channels: append([]notify.Channel{}, taskRow.Channels...)}
 			taskSchedule, err := parser.MakeSchedule(taskRow.ScheduleType, taskRow.ScheduleExpression, taskRow.ScheduleOffset)
 			if err != nil {
-				c.JSON(http.StatusBadRequest, err)
-				return
-			}
-			var nextTriggered time.Time
-			if taskRow.LastFired != nil {
-				var ok bool
-				nextTriggered, ok = taskSchedule.NextAfter(*taskRow.LastFired)
-				if !ok {
-					c.JSON(http.StatusBadRequest, err)
-					return
+				task.ScheduleError = err.Error()
+			} else if taskRow.Enabled {
+				since := now
+				if taskRow.LastFired != nil {
+					since = *taskRow.LastFired
 				}
-			}
-			task := taskResponse{
-				Title:           taskRow.Title,
-				Body:            taskRow.Body,
-				Channels:        taskRow.Channels,
-				LastFired:       taskRow.LastFired,
-				NextTriggeredAt: &nextTriggered,
+				if next, ok := taskSchedule.NextAfter(since); ok {
+					task.NextTriggeredAt = &next
+				}
 			}
 			tasks = append(tasks, task)
 		}
@@ -135,5 +130,17 @@ func getTaskHandler(store *store.Store) gin.HandlerFunc {
 			return
 		}
 		c.JSON(http.StatusOK, task)
+	}
+}
+
+func getChannelsHandler() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		c.JSON(http.StatusOK, notify.AllChannels())
+	}
+}
+
+func getActionsHandler() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		c.JSON(http.StatusOK, action.AllActionTypes())
 	}
 }
