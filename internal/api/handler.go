@@ -1,6 +1,9 @@
 package api
 
 import (
+	"encoding/json"
+	"errors"
+	"io"
 	"net/http"
 	"time"
 
@@ -142,5 +145,60 @@ func getChannelsHandler() gin.HandlerFunc {
 func getActionsHandler() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		c.JSON(http.StatusOK, action.AllActionTypes())
+	}
+}
+
+func outputTasksHandler(store *store.Store) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		tasks, err := store.GetAll(c.Request.Context())
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		data, err := json.MarshalIndent(tasks, "", "    ")
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		c.Header("Content-Disposition", `atachment; filename="tasks.json"`)
+		c.Data(http.StatusOK, "application/json; charset=utf-8", data)
+	}
+}
+
+func loadTasksHandler(store *store.Store) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, 5<<20)
+		header, err := c.FormFile("file")
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+
+		file, err := header.Open()
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		data, readErr := io.ReadAll(file)
+		err = errors.Join(readErr, file.Close())
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+		var tasks []model.Task
+		if err := json.Unmarshal(data, &tasks); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+		for _, task := range tasks {
+			if err := parser.ValidateTask(task); err != nil {
+				c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+				return
+			}
+			if _, err := store.Add(c.Request.Context(), task); err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+				return
+			}
+		}
 	}
 }

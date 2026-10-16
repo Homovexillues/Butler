@@ -45,5 +45,7 @@ func NewRouter(store *store.Store) *gin.Engine {
 	protected.POST("/get", getTaskHandler(store))
 	protected.GET("/channels", getChannelsHandler())
 	protected.GET("/actios", getActionsHandler())
+	protected.GET("/output", outputTasksHandler(store))
+	protected.POST("/load", loadTasksHandler(store))
 	return router
 }
