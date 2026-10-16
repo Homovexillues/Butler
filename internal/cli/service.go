@@ -82,8 +82,19 @@ func (p *program) Start(s service.Service) error {
 	go engine.Run(ctx, nodesChannel, requests, func(id int64, lastFired time.Time) error {
 		return store.MarkLastFired(ctx, id, lastFired)
 	})
-
 	return nil
+}
+
+func PrintMem() {
+	var ms runtime.MemStats
+	runtime.ReadMemStats(&ms) // 读取内存快照，会短暂STW
+
+	fmt.Printf("==== Go GC堆信息（等价C#托管堆）====\n")
+	fmt.Printf("HeapAlloc: %.2f MB 【正在使用的GC堆对象，最常用】\n", float64(ms.HeapAlloc)/1024/1024)
+	fmt.Printf("HeapSys:   %.2f MB 【向OS申请的GC堆总内存（含空闲）】\n", float64(ms.HeapSys)/1024/1024)
+	fmt.Printf("HeapIdle:  %.2f MB 【GC堆中空闲，还没还给OS的内存】\n", float64(ms.HeapIdle)/1024/1024)
+	fmt.Printf("HeapReleased: %.2f MB 【已经归还操作系统的内存】\n", float64(ms.HeapReleased)/1024/1024)
+	fmt.Printf("NumGC: %d 【已经执行GC次数】\n\n", ms.NumGC)
 }
 
 func LoadHTTPServer(p *program, s *store.Store) {
