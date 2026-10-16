@@ -200,5 +200,6 @@ func loadTasksHandler(store *store.Store) gin.HandlerFunc {
 				return
 			}
 		}
+		c.String(http.StatusOK, "succeed")
 	}
 }
