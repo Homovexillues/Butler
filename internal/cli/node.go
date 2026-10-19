@@ -11,7 +11,7 @@ var nodeCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		action := args[0]
 		switch action {
-		// todo: 待补充对调度节点的crud
+		// todo: 待补充对调度节点的crud,可以和tree命令合并在一起
 		}
 		return nil
 	},

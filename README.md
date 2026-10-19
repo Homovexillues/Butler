@@ -17,7 +17,7 @@ Butler 是一个自托管的定时任务与多渠道通知工具。任务和执�
 
 ## 构建与测试
 
-`go.mod` 要求 Go 1.26.2 或更新版本。当前 SQLite 驱动使用 `github.com/mattn/go-sqlite3`，构建需要启用 CGO 并准备目标平台的 C 编译器；目前尚未切换为纯 Go SQLite 驱动。
+`go.mod` 要求 Go 1.26.2 或更新版本。数据层使用 GORM 和 `github.com/glebarez/sqlite` 纯 Go SQLite 驱动，可设置 `CGO_ENABLED=0` 构建，无需 SQLite 的 C 编译工具链。JSON 字段通过模型上的 `serializer:json` 标签自动读写。
 
 ```sh
 go build -trimpath -tags=nomsgpack -ldflags="-s -w" -o butler .
@@ -30,7 +30,7 @@ go vet ./...
 
 `nomsgpack` 用于排除项目未使用的 Gin MsgPack 支持，保留 JSON 和 HTML 接口。仓库中的 `build.fish` 也是构建入口，但当前脚本不带此标签。
 
-Windows 可在对应构建环境下输出 `butler.exe`。仅设置 `GOOS` 并不能解决 SQLite 的 CGO 交叉编译工具链需求。
+Windows 可使用 `CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -tags nomsgpack -o butler.exe .` 交叉编译。
 
 ## 配置与数据目录
 
@@ -278,7 +278,7 @@ Windows 使用系统服务 API，默认不询问 Linux 运行用户；指定普�
 | 用途 | 依赖 |
 |---|---|
 | CLI / 系统服务 | Cobra、kardianos/service |
-| 数据存储 | GORM、SQLite、mattn/go-sqlite3（CGO） |
+| 数据存储 | GORM、SQLite、glebarez/sqlite（纯 Go，无 CGO） |
 | 调度 | robfig/cron、lunar-go |
 | HTTP / 页面嵌入 | Gin、Go embed |
 | MQTT Broker | mochi-mqtt/server |

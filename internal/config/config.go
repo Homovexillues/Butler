@@ -13,6 +13,12 @@ import (
 type Config struct {
 	Email EmailSettings `json:"email"`
 	Mqtt  MqttSettings  `json:"mqtt"`
+	User  UserSettings  `json:"user"`
+}
+
+type UserSettings struct {
+	Name     string `json:"name"`
+	Password string `json:"password"`
 }
 
 type MqttSettings struct {

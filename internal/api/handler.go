@@ -203,3 +203,13 @@ func loadTasksHandler(store *store.Store) gin.HandlerFunc {
 		c.String(http.StatusOK, "succeed")
 	}
 }
+
+func loginHandler() gin.HandlerFunc {
+	return nil
+}
+
+func identityHandler() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		c.JSON(http.StatusOK, gin.H{"username": "homovexillues", "authenticated": true})
+	}
+}
