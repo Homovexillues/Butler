@@ -2,38 +2,65 @@
 package config
 
 import (
+	"context"
+	"errors"
 	"os"
 	"path/filepath"
 
-	"butler/internal/model"
-	"butler/internal/parser"
+	"butler/internal/notify"
 	"butler/internal/store"
+
+	"gorm.io/gorm"
 )
+
+type Config struct {
+	Mqtt  notify.MqttSetting
+	Email notify.EmailNotifier
+}
 
 const (
 	EveryoneReadAndOwnerWrite      = 0o644
 	OwnerReadAndWrite              = 0o600
 	OwnerAllAndEveryoneReadExecute = 0o755
+	DefaultSettingID               = 1
 )
 
-func LoadConfig() (model.Config, error) {
-	configDir, err := ensureDirectory()
+func (cfg *Config) ValidateConfig() []error {
+	var errs []error
+	if cfg.Mqtt.Address != "" {
+		if err := cfg.Mqtt.Validate(); err != nil {
+			errs = append(errs, err)
+		}
+	}
+	if cfg.Email.Host != "" {
+		_, err := notify.NewEmailNotifier(cfg.Email.Host, cfg.Email.Port, cfg.Email.Username, cfg.Email.Authcode, cfg.Email.From, cfg.Email.To)
+		if err != nil {
+			errs = append(errs, err)
+		}
+	}
+	return errs
+}
+
+func LoadConfig(ctx context.Context, s *store.Store) (Config, error) {
+	var cfg Config
+	// 目前不考虑多套配置同时使用，故暂定使用默认配置
+	mqttSetting, err := store.Get[notify.MqttSetting](ctx, s, DefaultSettingID)
 	if err != nil {
-		return model.Config{}, err
+		if !errors.Is(err, gorm.ErrRecordNotFound) {
+			return Config{}, err
+		}
+		mqttSetting = notify.MqttSetting{ID: DefaultSettingID}
 	}
-	configPath := filepath.Join(configDir, "config.jsonc")
-	err = ensureFile(configPath, OwnerReadAndWrite)
-	if err != nil {
-		return model.Config{}, err
+	cfg.Mqtt = mqttSetting
+	email, err := store.Get[notify.EmailNotifier](ctx, s, DefaultSettingID)
+	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+		return Config{}, err
 	}
-	config, err := parser.Parse[model.Config](configPath)
-	if err != nil {
-		return model.Config{}, err
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		email = notify.EmailNotifier{ID: DefaultSettingID}
 	}
-	if config.Mqtt.CertFile != "" && !filepath.IsAbs(config.Mqtt.CertFile) {
-		config.Mqtt.CertFile = filepath.Join(configDir, config.Mqtt.CertFile)
-	}
-	return config, nil
+	cfg.Email = email
+	return cfg, nil
 }
 
 func LoadDatabase() (*store.Store, error) {

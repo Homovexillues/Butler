@@ -48,19 +48,21 @@ func (p *program) Start(s service.Service) error {
 	}
 	p.closeLog = closeFn
 
-	cfg, err := config.LoadConfig()
-	if err != nil {
-		return fmt.Errorf("fail to load config:\n%w", err)
-	}
-
 	store, err := config.LoadDatabase()
 	if err != nil {
 		return fmt.Errorf("fail to load database:\n%w", err)
 	}
 	p.closeDB = store.Close
+	ctx, cancel := context.WithCancel(context.Background())
+	configLoadedAt := time.Now().UTC()
+	cfg, err := config.LoadConfig(ctx, store)
+	if err != nil {
+		cancel()
+		return fmt.Errorf("fail to load config:\n%w", err)
+	}
+
 	registry := buildRegistry(cfg)
 
-	ctx, cancel := context.WithCancel(context.Background())
 	requests := make(chan notify.Request, 10)
 
 	initNodes, err := loadNodes(ctx, store)
@@ -76,7 +78,7 @@ func (p *program) Start(s service.Service) error {
 
 	LoadMessageLoop(ctx, registry, requests, 4)
 
-	LoadHTTPServer(p, store)
+	LoadHTTPServer(p, store, configLoadedAt)
 
 	LoadStoreCallback(ctx, nodesChannel, store)
 
@@ -98,10 +100,10 @@ func PrintMem() {
 	fmt.Printf("NumGC: %d 【已经执行GC次数】\n\n", ms.NumGC)
 }
 
-func LoadHTTPServer(p *program, s *store.Store) {
+func LoadHTTPServer(p *program, s *store.Store, configLoadedAt time.Time) {
 	p.server = &http.Server{
 		Addr:              ":8191",
-		Handler:           api.NewRouter(s),
+		Handler:           api.NewRouter(s, configLoadedAt),
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 	go func() {

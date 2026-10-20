@@ -43,29 +43,25 @@ Windows 可使用 `CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -tags nomsgp
 
 | 文件 | 用途 |
 |---|---|
-| `config.jsonc` | MQTT Broker、SMTP 等渠道配置 |
-| `butler.db` | SQLite 任务配置与 `LastFired` 执行状态 |
+| `butler.db` | SQLite 任务、MQTT/Email 配置、用户与 `LastFired` 执行状态 |
 | `butler.db-wal` / `butler.db-shm` | SQLite WAL 模式运行时可能产生的辅助文件 |
 | `logs/YYYY-MM-DD.log` | `serve` 的 JSON 日志，当前保留 7 天 |
 
-首次加载时会创建缺失的配置文件，但内容为空，仍需手动填写有效 JSON。`config.jsonc` 支持注释和尾逗号；数据库由程序初始化和迁移。
+数据库由程序初始化和迁移。MQTT 和 Email 分别保存在 `mqtt_settings`、`email_notifiers` 表中，当前都使用固定 ID `1`。首次启动不要求渠道配置，也不再读取 `config.jsonc`；旧文件不会自动导入，请通过页面重新填写渠道设置。
 
 服务账户决定配置和数据目录。交互运行和系统服务如果使用不同账户，可能读取不同数据库。备份运行中的 SQLite 时应采用一致性备份方式，不要只复制主文件而忽略尚未合并的 WAL 数据。
 
 ### 最小配置
 
-只使用本地桌面渠道时，可先使用：
-
-```json
-{
-  "mqtt": {},
-  "email": {}
-}
-```
-
-当前启动流程仍会尝试创建 MQTT 和邮件渠道，因此未填写的渠道会记录初始化失败，但不影响其他成功创建的渠道。任务只能使用已定义的渠道名称，实际发送还要求该渠道可用。
+只使用本地桌面渠道时，无需额外配置。没有 MQTT 监听地址或 SMTP 主机时，相应渠道跳过初始化。任务只能使用已定义的渠道名称，实际发送还要求该渠道可用。
 
 ### MQTT 与邮件配置
+
+页面右上角“通知配置”可读取、保存两种渠道配置。以下展示两种配置的字段；POST 对应接口时仅提交该渠道的对象，不含外层 `mqtt` 或 `email`。保存后需重启才能生效。密码/授权码不回显，提交空字符串表示保留已保存的值。
+
+Email 页面将发件人姓名与发件邮箱分开填写；接口接受 `fromName`（可选）和 `fromAddress`，自动编码组合为持久化的 `from`。读取接口会返回拆分后的两个字段。旧客户端仍可直接提交完整 `from`。
+
+两张渠道配置表通过 `updated_at` 记录保存时间；运行配置加载前的时间仅保存在进程内，并传给 HTTP Router。读取配置响应中的 `restartRequired` 表示该渠道在加载后保存过，页面重新打开仍会提示手动重启。它不代表渠道启动成功；保存相同内容也会更新保存时间。旧记录没有时间戳时不提示，首次保存后正常跟踪。
 
 ```json
 {
@@ -95,7 +91,7 @@ MQTT 配置是**本程序 Broker 的监听配置**，不是外部 Broker 地址�
 - 当前实现要求 `address`、`topic`、`username`、`password` 非空。
 - `skipverify: false` 时加载服务端证书及匹配私钥；证书不会自动生成。自签名证书需要客户端显式信任，证书域名/IP 应匹配客户端连接地址。
 - **当前 `skipverify: true` 实际表示关闭 TLS、使用明文 TCP**，并非“加密但跳过验证”。这是现有字段命名与实现之间的差异。
-- `certfile` 的相对路径以 Butler 配置目录为基准；`keyfile` 当前没有相同处理，建议使用绝对路径。
+- `certfile`、`keyfile` 都指服务所在设备的文件，建议填写绝对路径。
 - 外部客户端使用配置的账户订阅指定主题；该账户当前只获得该主题的读取权限。Butler 通过进程内发布，不需要再连接自己的 Broker。
 - `clientId` 字段仍存在于配置结构中，但当前 Broker 模式不使用它。
 
@@ -105,11 +101,11 @@ MQTT 消息是包含 `Title`、`Body` 的 JSON。发布成功表示 Broker 接�
 
 ## 快速开始
 
-1. 在配置目录创建有效的 `config.jsonc`。
-2. 执行 `./butler validate` 检查配置与数据库任务。
-3. 执行 `./butler serve` 启动服务。
-4. 通过下面的 HTTP API 添加任务。
-5. 使用 `./butler tree` 查看下一次计划时间。
+1. 执行 `./butler serve` 启动服务。
+2. 打开 `http://127.0.0.1:8191`，按需在“通知配置”中保存 MQTT/Email 设置。
+3. 保存配置后手动重启系统服务；前台运行需停止后重新运行 `serve`。
+4. 通过页面或 HTTP API 添加任务。
+5. 使用 `./butler validate` 校验配置及任务，或用 `./butler tree` 查看下一次计划时间。
 
 `serve` 固定监听 HTTP `:8191`。当前 API 尚未接入认证，包括可配置外部命令的写接口；请限制访问范围，不要直接开放到不受信任的网络。
 
@@ -188,6 +184,13 @@ Task 是平面任务，不再区分父分组和叶子节点，也没有渠道继
 | `POST /api/v1/get` | 查询完整 Task | `{"id": 1}` |
 | `POST /api/v1/update` | 更新 Task 配置 | 含 ID 的完整 Task 对象 |
 | `POST /api/v1/delete` | 删除 Task | `{"id": 1}` |
+| `GET /api/v1/actions` | 支持的行为类型，目前为 `["command"]` | 无 |
+| `GET /api/v1/settings/mqtt` | MQTT 配置，不回显密码 | 无 |
+| `POST /api/v1/settings/mqtt` | 保存完整 MQTT 配置 | MQTT 对象，ID 固定为 1 |
+| `GET /api/v1/settings/email` | Email 配置，不回显授权码 | 无 |
+| `POST /api/v1/settings/email` | 保存完整 Email 配置 | Email 对象，ID 固定为 1 |
+| `GET /api/v1/settings/output` | 导出任务 JSON（不包含渠道凭据） | 无 |
+| `POST /api/v1/settings/load` | 导入任务 JSON | multipart 文件字段 `file` |
 
 旧版 `/healthz` 已移除。POST 请求使用 `Content-Type: application/json`。
 
@@ -207,7 +210,7 @@ curl -sS http://127.0.0.1:8191/api/v1/tasks
 
 修改时先获取完整 Task，更改需要的字段，再连同 ID 提交到 `/update`。当前更新不是 PATCH，省略字段可能将其清空或重置。`LastFired` 不属于普通配置更新字段。
 
-服务进程内经 CRUD 成功写入的变更会通知 engine 重新加载任务；直接用其他进程修改 SQLite 不会触发这个内存通道。`config.jsonc` 的修改需要重启才能生效。
+服务进程内经 CRUD 成功写入的变更会通知 engine 重新加载任务；直接用其他进程修改 SQLite 不会触发这个内存通道。MQTT/Email 设置不会热更新，保存后需手动重启服务；前台运行时停止后重新运行 `serve`。应用不提供服务重启接口。
 
 `/tasks` 返回完整 Task 字段及 `nextTriggeredAt`，并保留复数 `channels` 供列表客户端使用；提交 Task 仍使用单数 `channel`。停用或无后续触发时间时，`nextTriggeredAt` 为 `null`；调度配置解析失败时，该任务携带 `scheduleError`，不影响其他任务显示。
 

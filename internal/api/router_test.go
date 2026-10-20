@@ -1,21 +1,69 @@
 package api
 
 import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"net"
+	"net/http"
+	"net/http/httptest"
+	"net/mail"
+	"path/filepath"
+	"reflect"
+	"strings"
+	"testing"
+	"time"
+
+	"butler/internal/config"
 	"butler/internal/model"
 	"butler/internal/notify"
 	"butler/internal/schedule"
 	"butler/internal/store"
-	"bytes"
-	"context"
-	"encoding/json"
+
 	"github.com/gin-gonic/gin"
-	"net/http"
-	"net/http/httptest"
-	"path/filepath"
-	"reflect"
-	"testing"
-	"time"
+	gomail "github.com/wneessen/go-mail"
 )
+
+func TestEmailSenderNameAndAddress(t *testing.T) {
+	router, s := testRouter(t)
+	for _, name := range []string{"顾霈圭", `管家 "提醒" \\ Butler`, ""} {
+		body := map[string]any{
+			"host": "smtp.example.test", "port": 465, "username": "sender@example.test",
+			"authcode": "secret", "fromName": name, "fromAddress": "sender@example.test",
+			"to": []string{"recipient@example.test"},
+		}
+		response := apiCall(t, router, http.MethodPost, "/api/v1/settings/email", body)
+		if response.Code != http.StatusOK {
+			t.Fatal(response.Body.String())
+		}
+		cfg, err := config.LoadConfig(context.Background(), s)
+		if err != nil {
+			t.Fatal(err)
+		}
+		from, err := mail.ParseAddress(cfg.Email.From)
+		if err != nil || from.Name != name || from.Address != "sender@example.test" {
+			t.Fatalf("sender lost: %q, %v", cfg.Email.From, err)
+		}
+		msg := gomail.NewMsg()
+		if err := msg.From(cfg.Email.From); err != nil {
+			t.Fatal(err)
+		}
+		if got := msg.GetFrom(); len(got) != 1 || got[0].Name != name {
+			t.Fatalf("mail sender name lost: %+v", got)
+		}
+		response = apiCall(t, router, http.MethodGet, "/api/v1/settings/email", nil)
+		var result struct {
+			FromName    string `json:"fromName"`
+			FromAddress string `json:"fromAddress"`
+		}
+		if err := json.Unmarshal(response.Body.Bytes(), &result); err != nil {
+			t.Fatal(err)
+		}
+		if result.FromName != name || result.FromAddress != "sender@example.test" {
+			t.Fatalf("sender fields lost: %+v", result)
+		}
+	}
+}
 
 func testRouter(t *testing.T) (*gin.Engine, *store.Store) {
 	t.Helper()
@@ -31,6 +79,7 @@ func testRouter(t *testing.T) (*gin.Engine, *store.Store) {
 	})
 	return NewRouter(s), s
 }
+
 func apiCall(t *testing.T, router http.Handler, method, path string, body any) *httptest.ResponseRecorder {
 	t.Helper()
 	raw, err := json.Marshal(body)
@@ -43,6 +92,7 @@ func apiCall(t *testing.T, router http.Handler, method, path string, body any) *
 	router.ServeHTTP(recorder, request)
 	return recorder
 }
+
 func fixtureTask() model.Task {
 	return model.Task{Title: "测试任务", Body: "测试正文", Enabled: true, Channels: []notify.Channel{notify.ChannelSystem}, ScheduleType: schedule.ScheduleInterval, ScheduleExpression: "1h", ActionExpression: json.RawMessage(`{}`)}
 }
@@ -59,6 +109,7 @@ func TestPublicRoutes(t *testing.T) {
 		}
 	}
 }
+
 func TestTaskCRUD(t *testing.T) {
 	router, s := testRouter(t)
 	task := fixtureTask()
@@ -228,5 +279,184 @@ func TestDuplicateAddReportsFailure(t *testing.T) {
 	second := apiCall(t, router, http.MethodPost, "/api/v1/add", task)
 	if second.Code < 400 {
 		t.Fatalf("duplicate reported success: %s", second.Body.String())
+	}
+}
+
+func TestSettingsRestartRequiredSinceLoad(t *testing.T) {
+	_, s := testRouter(t)
+	loadedAt := time.Now().UTC()
+	router := NewRouter(s, loadedAt)
+	check := func(router http.Handler, path string, want bool) time.Time {
+		t.Helper()
+		response := apiCall(t, router, http.MethodGet, "/api/v1/settings/"+path, nil)
+		var result struct {
+			Settings struct {
+				UpdatedAt time.Time `json:"updatedAt"`
+			} `json:"settings"`
+			ConfigLoadedAt  time.Time `json:"configLoadedAt"`
+			RestartRequired bool      `json:"restartRequired"`
+		}
+		if err := json.Unmarshal(response.Body.Bytes(), &result); err != nil {
+			t.Fatal(err)
+		}
+		if response.Code != http.StatusOK || result.RestartRequired != want || result.ConfigLoadedAt.IsZero() {
+			t.Fatalf("%s restart status: %s", path, response.Body.String())
+		}
+		return result.Settings.UpdatedAt
+	}
+	for _, tc := range []struct {
+		path  string
+		value any
+	}{
+		{"mqtt", notify.MqttSetting{Address: "127.0.0.1:1883", Topic: "test", Username: "u", Password: "secret", SkipVerify: true, UpdatedAt: time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC)}},
+		{"email", notify.EmailNotifier{Host: "smtp.example.test", Port: 465, Username: "u", Authcode: "secret", From: "from@example.test", To: []string{"to@example.test"}, UpdatedAt: time.Now().Add(24 * time.Hour)}},
+	} {
+		t.Run(tc.path, func(t *testing.T) {
+			check(router, tc.path, false)
+			for range 2 {
+				response := apiCall(t, router, http.MethodPost, "/api/v1/settings/"+tc.path, tc.value)
+				if response.Code != http.StatusOK {
+					t.Fatal(response.Body.String())
+				}
+				updatedAt := check(router, tc.path, true)
+				if !updatedAt.After(loadedAt) || updatedAt.After(time.Now()) {
+					t.Fatal("modification time must be server generated")
+				}
+				// Reopening a fresh router represents a new configuration load.
+				newRouter := NewRouter(s, time.Now().UTC())
+				check(newRouter, tc.path, false)
+				// Reading again through the running router must retain the warning.
+				check(router, tc.path, true)
+				loadedAt = time.Now().UTC()
+				router = NewRouter(s, loadedAt)
+			}
+		})
+	}
+}
+
+func TestChannelSettingsSaveAndRead(t *testing.T) {
+	router, s := testRouter(t)
+	// A live broker may already own this port; saving must not start a broker.
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer listener.Close()
+	mqtt := notify.MqttSetting{ID: 99, Address: listener.Addr().String(), Topic: "test", Username: "user", Password: "mqtt-secret", SkipVerify: true}
+	email := notify.EmailNotifier{ID: 99, Host: "smtp.example.test", Port: 465, Username: "user", Authcode: "email-secret", From: "from@example.test", To: []string{"to@example.test"}}
+	for _, tc := range []struct {
+		path   string
+		value  any
+		secret string
+	}{
+		{"mqtt", mqtt, mqtt.Password}, {"email", email, email.Authcode},
+	} {
+		t.Run(tc.path, func(t *testing.T) {
+			empty := apiCall(t, router, http.MethodGet, "/api/v1/settings/"+tc.path, nil)
+			if empty.Code != http.StatusOK {
+				t.Fatalf("empty settings: %s", empty.Body.String())
+			}
+			for range 2 {
+				response := apiCall(t, router, http.MethodPost, "/api/v1/settings/"+tc.path, tc.value)
+				if response.Code != http.StatusOK {
+					t.Fatalf("save: %d %s", response.Code, response.Body.String())
+				}
+				if strings.Contains(response.Body.String(), tc.secret) {
+					t.Fatal("save exposed password")
+				}
+			}
+			response := apiCall(t, router, http.MethodGet, "/api/v1/settings/"+tc.path, nil)
+			var got struct {
+				Settings    map[string]any `json:"settings"`
+				HasPassword bool           `json:"hasPassword"`
+			}
+			if err := json.Unmarshal(response.Body.Bytes(), &got); err != nil {
+				t.Fatal(err)
+			}
+			if response.Code != http.StatusOK || !got.HasPassword || got.Settings["id"] != float64(config.DefaultSettingID) || strings.Contains(response.Body.String(), tc.secret) {
+				t.Fatalf("read exposed secret or wrong singleton: %s", response.Body.String())
+			}
+		})
+	}
+	// Blank secrets keep the saved values; explicit zero values still update.
+	mqtt.Password = ""
+	mqtt.ClientID = "changed"
+	email.Authcode = ""
+	email.To = []string{"new@example.test"}
+	for path, value := range map[string]any{"mqtt": mqtt, "email": email} {
+		response := apiCall(t, router, http.MethodPost, "/api/v1/settings/"+path, value)
+		if response.Code != http.StatusOK {
+			t.Fatal(response.Body.String())
+		}
+	}
+	cfg, err := config.LoadConfig(context.Background(), s)
+	if err != nil || cfg.Mqtt.Password != "mqtt-secret" || cfg.Mqtt.ClientID != "changed" || cfg.Email.Authcode != "email-secret" || len(cfg.Email.To) != 1 || cfg.Email.To[0] != "new@example.test" {
+		t.Fatal("saved settings or preserved passwords do not match")
+	}
+	rows, err := store.GetAll[notify.MqttSetting](context.Background(), s)
+	if err != nil || len(rows) != 1 {
+		t.Fatalf("MQTT singleton count=%d, %v", len(rows), err)
+	}
+	emails, err := store.GetAll[notify.EmailNotifier](context.Background(), s)
+	if err != nil || len(emails) != 1 {
+		t.Fatalf("email singleton count=%d, %v", len(emails), err)
+	}
+	select {
+	case <-s.Changes():
+		t.Fatal("settings must not notify task scheduler")
+	default:
+	}
+}
+
+func TestChannelSettingsRejectInvalidWithoutWriting(t *testing.T) {
+	router, s := testRouter(t)
+	for _, tc := range []struct {
+		path string
+		body any
+	}{
+		{"mqtt", map[string]any{}},
+		{"mqtt", notify.MqttSetting{Address: "bad-address", Topic: "test", Username: "u", Password: "p", SkipVerify: true}},
+		{"mqtt", notify.MqttSetting{Address: "127.0.0.1:1883", Topic: "test", Username: "u", Password: "p", CertFile: "missing", KeyFile: "missing"}},
+		{"email", map[string]any{}},
+		{"email", notify.EmailNotifier{Host: "smtp.example.test", Port: 465, Username: "u", Authcode: "p", From: "bad-address", To: []string{"to@example.test"}}},
+	} {
+		response := apiCall(t, router, http.MethodPost, "/api/v1/settings/"+tc.path, tc.body)
+		if response.Code != http.StatusBadRequest {
+			t.Fatalf("%s: %d %s", tc.path, response.Code, response.Body.String())
+		}
+	}
+	mqtt, err := store.GetAll[notify.MqttSetting](context.Background(), s)
+	if err != nil || len(mqtt) != 0 {
+		t.Fatal("invalid MQTT settings persisted")
+	}
+	email, err := store.GetAll[notify.EmailNotifier](context.Background(), s)
+	if err != nil || len(email) != 0 {
+		t.Fatal("invalid email settings persisted")
+	}
+}
+
+func TestRestartEndpointRemoved(t *testing.T) {
+	router, _ := testRouter(t)
+	response := apiCall(t, router, http.MethodPost, "/api/v1/settings/restart", nil)
+	if response.Code != http.StatusNotFound {
+		t.Fatalf("removed restart endpoint: %d", response.Code)
+	}
+}
+
+func TestActionsAndSettingsTransferRoutes(t *testing.T) {
+	router, _ := testRouter(t)
+	response := apiCall(t, router, http.MethodGet, "/api/v1/actions", nil)
+	if response.Code != http.StatusOK || response.Body.String() != `["command"]` {
+		t.Fatalf("actions: %s", response.Body.String())
+	}
+	response = apiCall(t, router, http.MethodGet, "/api/v1/settings/output", nil)
+	if response.Code != http.StatusOK {
+		t.Fatalf("export: %s", response.Body.String())
+	}
+	request := httptest.NewRequest(http.MethodPost, "/api/v1/settings/load", nil)
+	recorder := httptest.NewRecorder()
+	router.ServeHTTP(recorder, request)
+	if recorder.Code != http.StatusBadRequest {
+		t.Fatalf("import route: %d", recorder.Code)
 	}
 }

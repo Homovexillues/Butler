@@ -20,12 +20,17 @@ var testCmd = &cobra.Command{
 		if !ok {
 			return fmt.Errorf("invalid notification channel %q", args[0])
 		}
-		config, err := config.LoadConfig()
+		s, err := config.LoadDatabase()
+		if err != nil {
+			return err
+		}
+		defer s.Close()
+		cfg, err := config.LoadConfig(cmd.Context(), s)
 		if err != nil {
 			return fmt.Errorf("fail to load config:\n%w", err)
 		}
 
-		registry := buildRegistry(config)
+		registry := buildRegistry(cfg)
 
 		notifier, ok := registry.Get(channel)
 		if !ok {

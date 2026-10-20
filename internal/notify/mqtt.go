@@ -5,6 +5,10 @@ import (
 	"crypto/tls"
 	"encoding/json"
 	"fmt"
+	"net"
+	"strconv"
+	"strings"
+	"time"
 
 	mqtt "github.com/mochi-mqtt/server/v2"
 	"github.com/mochi-mqtt/server/v2/hooks/auth"
@@ -16,15 +20,52 @@ type mqttNotifier struct {
 	Topic  string
 }
 
+type MqttSetting struct {
+	UpdatedAt  time.Time `json:"updatedAt" gorm:"column:updated_at;autoUpdateTime"`
+	ID         int64     `json:"id" gorm:"column:id;primaryKey;autoIncrement"`
+	Address    string    `json:"address" gorm:"column:address;not null"`
+	Topic      string    `json:"topic" gorm:"column:topic;not null"`
+	ClientID   string    `json:"clientId" gorm:"column:client_id"`
+	Username   string    `json:"username" gorm:"column:username;not null"`
+	Password   string    `json:"password" gorm:"column:password;not null"`
+	CertFile   string    `json:"certfile" gorm:"column:cert_file"`
+	KeyFile    string    `json:"keyfile" gorm:"column:key_file"`
+	SkipVerify bool      `json:"skipverify" gorm:"column:skip_verify;not null"`
+}
+
 const qosAtleastOnce = 1
 
-func NewMqttNotifier(listen, topic, username, password, certFile, keyFile string, insecure bool) (Notifier, error) {
-	if listen == "" || topic == "" || username == "" || password == "" {
-		return nil, fmt.Errorf("mqtt configuration is not complete")
+// Validate checks settings without binding a port or starting a broker.
+func (settings MqttSetting) Validate() error {
+	if settings.Address == "" || settings.Topic == "" || settings.Username == "" || settings.Password == "" {
+		return fmt.Errorf("mqtt configuration is not complete")
+	}
+	_, port, err := net.SplitHostPort(settings.Address)
+	if err != nil {
+		return fmt.Errorf("mqtt: invalid listen address: %w", err)
+	}
+	n, err := strconv.Atoi(port)
+	if err != nil || n < 1 || n > 65535 {
+		return fmt.Errorf("mqtt: port must be between 1 and 65535")
+	}
+	if strings.ContainsAny(settings.Topic, "+#\x00") {
+		return fmt.Errorf("mqtt: topic must not contain wildcards or NUL")
+	}
+	if !settings.SkipVerify {
+		if _, err := tls.LoadX509KeyPair(settings.CertFile, settings.KeyFile); err != nil {
+			return fmt.Errorf("mqtt: load certificate: %w", err)
+		}
+	}
+	return nil
+}
+
+func NewMqttNotifier(settings MqttSetting) (Notifier, error) {
+	if err := settings.Validate(); err != nil {
+		return nil, err
 	}
 	var tlsConfig *tls.Config
-	if !insecure {
-		cert, err := tls.LoadX509KeyPair(certFile, keyFile)
+	if !settings.SkipVerify {
+		cert, err := tls.LoadX509KeyPair(settings.CertFile, settings.KeyFile)
 		if err != nil {
 			return nil, fmt.Errorf("fail to load certificate file:%w", err)
 		}
@@ -39,10 +80,10 @@ func NewMqttNotifier(listen, topic, username, password, certFile, keyFile string
 	err := broker.AddHook(new(auth.Hook), &auth.Options{
 		Ledger: &auth.Ledger{
 			Users: auth.Users{
-				username: {
-					Password: auth.RString(password),
+				settings.Username: {
+					Password: auth.RString(settings.Password),
 					ACL: auth.Filters{
-						auth.RString(topic): auth.ReadOnly,
+						auth.RString(settings.Topic): auth.ReadOnly,
 					},
 				},
 			},
@@ -56,7 +97,7 @@ func NewMqttNotifier(listen, topic, username, password, certFile, keyFile string
 	}
 	err = broker.AddListener(listeners.NewTCP(listeners.Config{
 		ID:        "mqtt-tls",
-		Address:   listen,
+		Address:   settings.Address,
 		TLSConfig: tlsConfig,
 	}))
 	if err != nil {
@@ -67,7 +108,7 @@ func NewMqttNotifier(listen, topic, username, password, certFile, keyFile string
 		_ = broker.Close()
 		return nil, err
 	}
-	return &mqttNotifier{Server: broker, Topic: topic}, nil
+	return &mqttNotifier{Server: broker, Topic: settings.Topic}, nil
 }
 
 func (mqttNotifier mqttNotifier) Close() error {

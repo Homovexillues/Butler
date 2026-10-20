@@ -3,9 +3,11 @@ package config
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"net"
 	"os"
 	"path/filepath"
-	"strings"
+	"reflect"
 	"testing"
 
 	"butler/internal/model"
@@ -30,60 +32,71 @@ func isolatedConfigRoot(t *testing.T) string {
 	return dir
 }
 
-func TestLoadConfigJSONCAndCertificatePath(t *testing.T) {
-	dir := isolatedConfigRoot(t)
-	raw := `{// comment
- "mqtt":{"address":":8883","topic":"test","certfile":"certs/server.crt","keyfile":"certs/server.key"},
- "email":{"host":"smtp.example.test"},
- }`
-	if err := os.WriteFile(filepath.Join(dir, "config.jsonc"), []byte(raw), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	cfg, err := LoadConfig()
+func TestLoadConfigEmptyAndPersisted(t *testing.T) {
+	isolatedConfigRoot(t)
+	s, err := LoadDatabase()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if cfg.Mqtt.Address != ":8883" || cfg.Mqtt.Topic != "test" || cfg.Mqtt.CertFile != filepath.Join(dir, "certs/server.crt") || cfg.Email.Host != "smtp.example.test" {
-		t.Fatalf("config=%+v", cfg)
+	t.Cleanup(func() { _ = s.Close() })
+	ctx := context.Background()
+	cfg, err := LoadConfig(ctx, s)
+	if err != nil {
+		t.Fatal(err)
 	}
-	// Existing user configuration must not be overwritten by loading it.
-	got, err := os.ReadFile(filepath.Join(dir, "config.jsonc"))
-	if err != nil || string(got) != raw {
-		t.Fatalf("configuration overwritten: %v", err)
+	if cfg.Mqtt.Address != "" || cfg.Email.Host != "" {
+		t.Fatalf("unexpected defaults: %+v", cfg)
+	}
+	mqtt := notify.MqttSetting{ID: DefaultSettingID, Address: "127.0.0.1:1883", Topic: "test", Username: "user", Password: "secret", SkipVerify: true}
+	email := notify.EmailNotifier{ID: DefaultSettingID, Host: "smtp.example.test", Port: 465, Username: "user", Authcode: "secret", From: "from@example.test", To: []string{"to@example.test"}}
+	if err := store.SaveSetting(ctx, s, &mqtt); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.SaveSetting(ctx, s, &email); err != nil {
+		t.Fatal(err)
+	}
+	// SQLite retains the instant and offset, not Go's location/monotonic metadata.
+	mqtt.UpdatedAt = mqtt.UpdatedAt.UTC()
+	email.UpdatedAt = email.UpdatedAt.UTC()
+	cfg, err = LoadConfig(ctx, s)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg.Mqtt.UpdatedAt = cfg.Mqtt.UpdatedAt.UTC()
+	cfg.Email.UpdatedAt = cfg.Email.UpdatedAt.UTC()
+	if !reflect.DeepEqual(cfg.Mqtt, mqtt) || !reflect.DeepEqual(cfg.Email, email) {
+		t.Fatalf("settings changed: %+v", cfg)
+	}
+	if err := s.Close(); err != nil {
+		t.Fatal(err)
+	}
+	s, err = LoadDatabase()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = s.Close() })
+	cfg, err = LoadConfig(ctx, s)
+	cfg.Mqtt.UpdatedAt = cfg.Mqtt.UpdatedAt.UTC()
+	cfg.Email.UpdatedAt = cfg.Email.UpdatedAt.UTC()
+	if err != nil || !reflect.DeepEqual(cfg.Mqtt, mqtt) || !reflect.DeepEqual(cfg.Email, email) {
+		t.Fatalf("settings not persisted: %+v, %v", cfg, err)
 	}
 }
 
-func TestLoadConfigRejectsEmptyOrMalformed(t *testing.T) {
-	dir := isolatedConfigRoot(t)
-	for _, raw := range []string{"", "{bad"} {
-		if err := os.WriteFile(filepath.Join(dir, "config.jsonc"), []byte(raw), 0o600); err != nil {
-			t.Fatal(err)
-		}
-		if _, err := LoadConfig(); err == nil {
-			t.Fatalf("accepted %q", raw)
-		}
+func TestValidateConfigDoesNotStartBroker(t *testing.T) {
+	// Occupy the address: validation must not attempt to listen on it.
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
 	}
-}
-
-func TestValidateConfig(t *testing.T) {
-	if errs := (model.Config{}).ValidateConfig(); len(errs) != 0 {
-		t.Fatal(errs)
+	defer listener.Close()
+	cfg := Config{Mqtt: notify.MqttSetting{Address: listener.Addr().String(), Topic: "test", Username: "user", Password: "secret", SkipVerify: true}}
+	if err := errors.Join(cfg.ValidateConfig()...); err != nil {
+		t.Fatal(err)
 	}
-	valid := model.Config{Mqtt: model.MqttSetting{Address: ":8883", Topic: "test"}, Email: model.EmailSetting{Host: "smtp.example.test", Port: 465, Username: "user", Authcode: "secret", From: "from@example.test", To: []string{"to@example.test"}}}
-	if errs := valid.ValidateConfig(); len(errs) != 0 {
-		t.Fatal(errs)
-	}
-	errs := (model.Config{Mqtt: model.MqttSetting{Username: "user"}, Email: model.EmailSetting{Host: "smtp.example.test"}}).ValidateConfig()
-	for _, prefix := range []string{"mqtt:", "email:"} {
-		found := false
-		for _, err := range errs {
-			if strings.Contains(err.Error(), prefix) {
-				found = true
-			}
-		}
-		if !found {
-			t.Fatalf("missing %s errors: %v", prefix, errs)
-		}
+	cfg.Mqtt.Password = ""
+	if err := errors.Join(cfg.ValidateConfig()...); err == nil {
+		t.Fatal("invalid MQTT configuration accepted")
 	}
 }
 

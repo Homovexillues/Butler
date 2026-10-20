@@ -23,7 +23,13 @@ type taskResponse struct {
 	ScheduleError   string           `json:"scheduleError,omitempty"`
 }
 
-func NewRouter(store *store.Store) *gin.Engine {
+// Production passes the time immediately before loading runtime configuration.
+// Standalone routers use their creation time as the baseline.
+func NewRouter(store *store.Store, loadedAt ...time.Time) *gin.Engine {
+	configLoadedAt := time.Now().UTC()
+	if len(loadedAt) > 0 {
+		configLoadedAt = loadedAt[0]
+	}
 	router := gin.Default()
 	router.GET("/", func(c *gin.Context) {
 		page, err := webFiles.ReadFile("web/index.html")
@@ -38,17 +44,30 @@ func NewRouter(store *store.Store) *gin.Engine {
 	})
 	api := router.Group("/api/v1")
 	auth := api.Group("/api/v1/auth")
-	auth.GET("whoami", identityHandler())
-	auth.POST("login", loginHandler())
+	{
+
+		auth.GET("whoami", identityHandler())
+		auth.POST("login", loginHandler())
+	}
 	protected := api.Group("")
-	protected.GET("/tasks", listTaskHandler(store))
-	protected.POST("/add", addTaskHandler(store))
-	protected.POST("/delete", deleteTaskHandler(store))
-	protected.POST("/update", updateTaskHandler(store))
-	protected.POST("/get", getTaskHandler(store))
-	protected.GET("/channels", getChannelsHandler())
-	protected.GET("/actios", getActionsHandler())
-	protected.GET("/output", outputTasksHandler(store))
-	protected.POST("/load", loadTasksHandler(store))
+	{
+
+		protected.GET("/tasks", listTaskHandler(store))
+		protected.POST("/add", addTaskHandler(store))
+		protected.POST("/delete", deleteTaskHandler(store))
+		protected.POST("/update", updateTaskHandler(store))
+		protected.POST("/get", getTaskHandler(store))
+		protected.GET("/channels", getChannelsHandler())
+		protected.GET("/actions", getActionsHandler())
+	}
+	settings := protected.Group("/settings")
+	{
+		settings.GET("/mqtt", getMqttConfigHandler(store, configLoadedAt))
+		settings.GET("/email", getEmailConfigHandler(store, configLoadedAt))
+		settings.GET("/output", outputTasksHandler(store))
+		settings.POST("/load", loadTasksHandler(store))
+		settings.POST("/mqtt", configMqttHandler(store))
+		settings.POST("/email", configEmailHandler(store))
+	}
 	return router
 }

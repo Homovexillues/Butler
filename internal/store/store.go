@@ -8,9 +8,11 @@ import (
 	"time"
 
 	"butler/internal/model"
+	"butler/internal/notify"
 
 	"github.com/glebarez/sqlite"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 type Store struct {
@@ -31,7 +33,8 @@ func NewStore(dbPath string) (*Store, error) {
 	sqlDB.SetMaxOpenConns(1)
 	sqlDB.SetMaxIdleConns(1)
 	sqlDB.SetConnMaxIdleTime(0)
-	if err := db.AutoMigrate(&model.Task{}, &model.Config{}, &model.User{}); err != nil {
+	if err := db.AutoMigrate(&model.Task{},
+		&notify.EmailNotifier{}, &notify.MqttSetting{}, &model.User{}); err != nil {
 		return nil, errors.Join(err, sqlDB.Close())
 	}
 	store := Store{
@@ -110,6 +113,12 @@ func Get[T any](ctx context.Context, store *Store, id int64) (T, error) {
 
 func GetAll[T any](ctx context.Context, store *Store) ([]T, error) {
 	return gorm.G[T](store.db).Find(ctx)
+}
+
+// SaveSetting replaces a singleton setting, including zero-valued fields.
+// Settings take effect on restart and do not notify the task scheduler.
+func SaveSetting[T any](ctx context.Context, store *Store, value *T) error {
+	return store.db.WithContext(ctx).Clauses(clause.OnConflict{UpdateAll: true}).Create(value).Error
 }
 
 func (store *Store) Exist(ctx context.Context, task model.Task) (bool, error) {

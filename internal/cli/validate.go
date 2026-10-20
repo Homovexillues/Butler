@@ -18,16 +18,16 @@ var validateCmd = &cobra.Command{
 	Args:  cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		var errs []error
-		cfg, err := config.LoadConfig()
-		if err != nil {
-			errs = append(errs, fmt.Errorf("load config: %w", err))
-		} else {
-			errs = append(errs, cfg.ValidateConfig()...)
-		}
 		s, err := config.LoadDatabase()
 		if err != nil {
 			errs = append(errs, fmt.Errorf("load database: %w", err))
 		} else {
+			cfg, err := config.LoadConfig(cmd.Context(), s)
+			if err != nil {
+				errs = append(errs, fmt.Errorf("load config: %w", err))
+			} else {
+				errs = append(errs, cfg.ValidateConfig()...)
+			}
 			tasks, err := store.GetAll[model.Task](cmd.Context(), s)
 			if err != nil {
 				errs = append(errs, fmt.Errorf("load tasks: %w", err))

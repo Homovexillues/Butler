@@ -8,10 +8,10 @@
 </style>
 </head>
 <body><main>
-<header><div><h1>Butler</h1><p class="muted" style="margin:6px 0">任务与定时通知管理</p></div><button id="newTask" class="primary">＋ 新建任务</button></header>
+<header><div><h1>Butler</h1><p class="muted" style="margin:6px 0">任务与定时通知管理</p></div><div class="actions"><button id="openSettings">通知配置</button><button id="newTask" class="primary">＋ 新建任务</button></div></header>
 <div class="toolbar"><input id="search" type="search" placeholder="搜索标题、正文" aria-label="搜索任务"><select id="filter" aria-label="任务状态" style="max-width:180px"><option value="all">全部状态</option><option value="enabled">已启用</option><option value="disabled">已停用</option></select><button id="refresh">刷新</button><button id="exportTasks">导出 JSON</button><button id="importTasks">导入 JSON</button><input id="importFile" type="file" accept=".json,application/json" aria-label="选择任务 JSON 文件" hidden></div>
 <div id="transferStatus" role="status" aria-live="polite" style="white-space:pre-wrap;overflow-wrap:anywhere"></div><div id="status" role="status" aria-live="polite"></div><div id="tasks"></div>
-<p class="hint">下一次时间来自服务端计算，可能包含待补发的时间；尚未触发的间隔任务仅显示估算时间。显示时间采用浏览器所在时区。页面不会修改服务配置或通知渠道凭据。</p>
+<p class="hint">下一次时间来自服务端计算，可能包含待补发的时间；尚未触发的间隔任务仅显示估算时间。显示时间采用浏览器所在时区。</p>
 </main>
 <dialog id="editor" aria-labelledby="editorTitle"><h2 id="editorTitle">新建任务</h2>
 <form id="taskForm">
@@ -25,6 +25,35 @@
 <div id="commandFields" hidden><label>可执行程序<input id="command" placeholder="例如 /usr/bin/echo" spellcheck="false"></label><label>参数（每行一个）<textarea id="args" rows="3" spellcheck="false"></textarea></label><label>工作目录（可选）<input id="dir" spellcheck="false"></label><label>环境变量（JSON 对象，可选）<textarea id="env" rows="2" placeholder='{"NAME":"value"}' spellcheck="false"></textarea></label><p class="hint">命令在服务所在设备执行，使用服务进程的权限。参数直接传入程序，不自动经过 shell。</p></div>
 <label class="check"><input id="enabled" type="checkbox" checked>启用任务</label><div id="formError" role="alert"></div><div class="actions"><button type="button" id="cancel">取消</button><button type="submit" id="save" class="primary">保存任务</button></div>
 </form></dialog>
+<dialog id="settingsEditor" aria-labelledby="settingsTitle">
+<h2 id="settingsTitle">通知配置</h2>
+<p class="hint">配置保存在服务端，保存后需重启 Butler 才生效。空密码表示保留已保存的密码。未配置的渠道不会启动。</p>
+<p id="settingsStatus" role="status" aria-live="polite"></p>
+<fieldset id="settingsFields" disabled>
+<legend>渠道设置</legend>
+<form id="mqttForm">
+<h3>MQTT 服务端</h3>
+<div class="fields"><label>监听地址<input id="mqttAddress" required placeholder="127.0.0.1:1883"></label><label>Topic<input id="mqttTopic" required placeholder="butler"></label></div>
+<div class="fields"><label>用户名<input id="mqttUsername" required autocomplete="off"></label><label>密码<input id="mqttPassword" type="password" autocomplete="new-password"></label></div>
+<label class="check"><input id="mqttPlain" type="checkbox">不使用 TLS（明文 TCP）</label>
+<p class="hint">关闭 TLS 后连接不会加密。证书路径指 Butler 所在设备上的文件，不是浏览器所在设备。</p>
+<div class="fields"><label>证书路径<input id="mqttCert"></label><label>私钥路径<input id="mqttKey"></label></div>
+<div class="actions"><button type="submit" class="primary">保存 MQTT</button></div>
+</form>
+<hr>
+<form id="emailForm">
+<h3>Email（SMTP SSL）</h3>
+<div class="fields"><label>SMTP 主机<input id="emailHost" required placeholder="smtp.example.com"></label><label>端口<input id="emailPort" type="number" required min="1" max="65535" value="465"></label></div>
+<div class="fields"><label>用户名<input id="emailUsername" required autocomplete="off"></label><label>密码 / 授权码<input id="emailPassword" type="password" autocomplete="new-password"></label></div>
+<div class="fields"><label>发件人姓名（可选）<input id="emailFromName" placeholder="例如 顾霈圭" autocomplete="name"></label><label>发件邮箱<input id="emailFrom" type="email" required placeholder="sender@example.com"></label></div>
+<p class="hint">姓名和邮箱分开填写，系统自动组合邮件发件人，无需输入引号、反斜杠或尖括号。</p>
+<label>收件地址（每行一个）<textarea id="emailTo" rows="3" required></textarea></label>
+<div class="actions"><button type="submit" class="primary">保存 Email</button></div>
+</form>
+</fieldset>
+<p class="hint">保存配置后，请手动重启 Butler 服务；前台运行时停止并重新运行 serve。</p>
+<div class="actions"><button id="closeSettings">关闭</button></div>
+</dialog>
 <script>
 'use strict';
 const $=id=>document.getElementById(id);
@@ -75,7 +104,7 @@ async function exportTasks() {
     transferStatus('正在导出…');
     let url;
     try {
-        const response = await fetch('/api/v1/output');
+        const response = await fetch('/api/v1/settings/output');
         if (!response.ok) await transferResponse(response);
         const data = await response.blob();
         url = URL.createObjectURL(data);
@@ -120,7 +149,7 @@ async function importTasks(event) {
         form.append('file', file);
         transferStatus('正在导入 ' + data.length + ' 条任务，请稍候…');
         submitted = true;
-        const result = await transferResponse(await fetch('/api/v1/load', {
+        const result = await transferResponse(await fetch('/api/v1/settings/load', {
             method: 'POST', body: form
         }));
         if (result && typeof result === 'object' && Number.isInteger(result.added)) {
@@ -140,5 +169,92 @@ $('exportTasks').onclick = exportTasks;
 $('importTasks').onclick = () => $('importFile').click();
 $('importFile').onchange = importTasks;
 $('editor').addEventListener('cancel',event=>{if(saving)event.preventDefault();});$('cancel').onclick=()=>$('editor').close();$('newTask').onclick=()=>openEditor();$('refresh').onclick=load;$('search').oninput=render;$('filter').onchange=render;$('scheduleType').onchange=scheduleHint;$('actionType').onchange=actionFields;
-(async()=>{try{channels=await api('channels');}catch(error){status('无法加载通知渠道：'+error.message,true);$('newTask').disabled=true;return;}await load();})();
+let settingsBusy = false, mqttClientID = '';
+function settingsStatus(message, error = false) {
+    $('settingsStatus').textContent = message;
+    $('settingsStatus').className = error ? 'error' : '';
+}
+function settingsBusyState(busy) {
+    settingsBusy = busy;
+    $('settingsFields').disabled = busy;
+    $('closeSettings').disabled = busy;
+}
+$('openSettings').onclick = async () => {
+    $('settingsEditor').showModal();
+    settingsBusyState(true);
+    settingsStatus('正在加载配置…');
+    try {
+        const [mqtt, email] = await Promise.all([api('settings/mqtt'), api('settings/email')]);
+        const m = mqtt.settings, e = email.settings;
+        mqttClientID = m.clientId || '';
+        $('mqttAddress').value = m.address || '';
+        $('mqttTopic').value = m.topic || '';
+        $('mqttUsername').value = m.username || '';
+        $('mqttPassword').value = '';
+        $('mqttPassword').required = !mqtt.hasPassword;
+        $('mqttPassword').placeholder = mqtt.hasPassword ? '已设置，留空保持不变' : '请输入密码';
+        $('mqttPlain').checked = m.skipverify;
+        $('mqttCert').value = m.certfile || '';
+        $('mqttKey').value = m.keyfile || '';
+        $('emailHost').value = e.host || '';
+        $('emailPort').value = e.port || 465;
+        $('emailUsername').value = e.username || '';
+        $('emailPassword').value = '';
+        $('emailPassword').required = !email.hasPassword;
+        $('emailPassword').placeholder = email.hasPassword ? '已设置，留空保持不变' : '请输入授权码';
+        $('emailFromName').value = email.fromName || '';
+        $('emailFrom').value = email.fromAddress || '';
+        $('emailTo').value = (e.to || []).join('\n');
+        settingsBusyState(false);
+        const changed = [mqtt.restartRequired && 'MQTT', email.restartRequired && 'Email'].filter(Boolean);
+        settingsStatus(changed.length
+            ? changed.join('、') + ' 配置已修改，请手动重启 Butler 后生效。'
+            : '配置加载后尚无新的保存记录。渠道是否启动成功请查看服务日志。');
+    } catch (error) {
+        settingsBusyState(false);
+        $('settingsFields').disabled = true;
+        settingsStatus('加载失败：' + error.message, true);
+    }
+};
+async function saveSettings(kind, value) {
+    if (settingsBusy) return;
+    settingsBusyState(true);
+    settingsStatus('正在保存…');
+    try {
+        await api('settings/' + kind, value);
+        const input = $(kind === 'mqtt' ? 'mqttPassword' : 'emailPassword');
+        input.value = '';
+        input.required = false;
+        input.placeholder = '已设置，留空保持不变';
+        settingsStatus('已保存 ' + kind.toUpperCase() + ' 配置，请手动重启 Butler 后生效。');
+    } catch (error) {
+        settingsStatus('保存失败：' + error.message, true);
+    } finally { settingsBusyState(false); }
+}
+$('mqttForm').onsubmit = event => {
+    event.preventDefault();
+    saveSettings('mqtt', {
+        address: $('mqttAddress').value.trim(), topic: $('mqttTopic').value.trim(),
+        clientId: mqttClientID, username: $('mqttUsername').value.trim(),
+        password: $('mqttPassword').value, skipverify: $('mqttPlain').checked,
+        certfile: $('mqttCert').value.trim(), keyfile: $('mqttKey').value.trim()
+    });
+};
+$('emailForm').onsubmit = event => {
+    event.preventDefault();
+    saveSettings('email', {
+        host: $('emailHost').value.trim(), port: Number($('emailPort').value),
+        username: $('emailUsername').value.trim(), authcode: $('emailPassword').value,
+        fromName: $('emailFromName').value.trim(), fromAddress: $('emailFrom').value.trim(),
+        to: $('emailTo').value.split(/\r?\n/).map(x => x.trim()).filter(Boolean)
+    });
+};
+$('closeSettings').onclick = () => $('settingsEditor').close();
+$('settingsEditor').addEventListener('cancel', event => { if (settingsBusy) event.preventDefault(); });
+(async()=>{try{
+    channels=await api('channels');
+    const actions=await api('actions');
+    $('actionType').replaceChildren(new Option('仅发送通知',''));
+    for(const action of actions) $('actionType').add(new Option(action==='command'?'执行命令并通知':action,action));
+}catch(error){status('无法加载渠道或行为类型：'+error.message,true);$('newTask').disabled=true;return;}await load();})();
 </script></body></html>
