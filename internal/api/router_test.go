@@ -106,7 +106,7 @@ func TestTaskCRUD(t *testing.T) {
 	if response.Code != http.StatusOK {
 		t.Fatalf("delete: %d %s", response.Code, response.Body.String())
 	}
-	rows, err := s.GetAll(context.Background())
+	rows, err := store.GetAll[model.Task](context.Background(), s)
 	if err != nil || len(rows) != 0 {
 		t.Fatalf("deleted row remains: %+v %v", rows, err)
 	}
@@ -125,7 +125,7 @@ func TestListTasks(t *testing.T) {
 	task := fixtureTask()
 	fired := time.Date(2026, 10, 15, 8, 0, 0, 0, time.UTC)
 	task.LastFired = &fired
-	if _, err := s.Add(context.Background(), task); err != nil {
+	if err := store.Add(context.Background(), s, &task); err != nil {
 		t.Fatal(err)
 	}
 	response := apiCall(t, router, http.MethodGet, "/api/v1/tasks", nil)
@@ -170,7 +170,7 @@ func TestWritesRejectInvalidTaskWithoutPersisting(t *testing.T) {
 			}
 		}
 	}
-	rows, err := s.GetAll(context.Background())
+	rows, err := store.GetAll[model.Task](context.Background(), s)
 	if err != nil || len(rows) != 0 {
 		t.Fatalf("invalid rows persisted: %+v %v", rows, err)
 	}
@@ -187,11 +187,9 @@ func TestManagementListIncludesEditableTasks(t *testing.T) {
 	fixtures[2].Title = "invalid legacy schedule"
 	fixtures[2].ScheduleExpression = "invalid"
 	for i := range fixtures {
-		id, err := s.Add(context.Background(), fixtures[i])
-		if err != nil {
+		if err := store.Add(context.Background(), s, &fixtures[i]); err != nil {
 			t.Fatal(err)
 		}
-		fixtures[i].ID = id
 	}
 	response := apiCall(t, router, http.MethodGet, "/api/v1/tasks", nil)
 	if response.Code != http.StatusOK {

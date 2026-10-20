@@ -7,6 +7,7 @@ import (
 	"butler/internal/config"
 	"butler/internal/model"
 	"butler/internal/parser"
+	"butler/internal/store"
 
 	"github.com/spf13/cobra"
 )
@@ -27,7 +28,7 @@ var validateCmd = &cobra.Command{
 		if err != nil {
 			errs = append(errs, fmt.Errorf("load database: %w", err))
 		} else {
-			tasks, err := s.GetAll(cmd.Context())
+			tasks, err := store.GetAll[model.Task](cmd.Context(), s)
 			if err != nil {
 				errs = append(errs, fmt.Errorf("load tasks: %w", err))
 			} else {

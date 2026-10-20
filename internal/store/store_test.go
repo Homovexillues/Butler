@@ -49,7 +49,7 @@ func TestLegacyDatabaseCompatibility(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = s.Close() })
 	ctx := context.Background()
-	task, err := s.Get(ctx, 1)
+	task, err := Get[model.Task](ctx, s, 1)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -64,7 +64,7 @@ func TestLegacyDatabaseCompatibility(t *testing.T) {
 	if err := s.Update(ctx, task); err != nil {
 		t.Fatal(err)
 	}
-	got, err := s.Get(ctx, 1)
+	got, err := Get[model.Task](ctx, s, 1)
 	if err != nil || got.Body != "" || got.Enabled || got.LastFired == nil || !got.LastFired.Equal(fired) {
 		t.Fatalf("legacy update: %+v, %v", got, err)
 	}
@@ -101,13 +101,13 @@ func TestTaskRoundTrip(t *testing.T) {
 		ActionExpression:   json.RawMessage(`{"channels":["mqtt"]}`),
 		Channels:           []notify.Channel{notify.ChannelMQTT},
 	}
-	want.ID, err = s.Add(ctx, want)
+	err = Add(ctx, s, &want)
 	if err != nil {
 		t.Fatal(err)
 	}
 	check := func() {
 		t.Helper()
-		got, err := s.Get(ctx, want.ID)
+		got, err := Get[model.Task](ctx, s, want.ID)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -141,9 +141,12 @@ func TestCRUDChangesAndStatePersistence(t *testing.T) {
 	expectChange := func(want bool) {
 		t.Helper()
 		select {
-		case <-s.Changes():
+		case typ := <-s.Changes():
 			if !want {
 				t.Fatal("unexpected change notification")
+			}
+			if typ != reflect.TypeFor[model.Task]() {
+				t.Fatalf("unexpected change type: %v", typ)
 			}
 		default:
 			if want {
@@ -152,7 +155,7 @@ func TestCRUDChangesAndStatePersistence(t *testing.T) {
 		}
 	}
 	task := model.Task{Title: "test", Channels: []notify.Channel{notify.ChannelSystem}, ActionExpression: json.RawMessage(`{}`)}
-	task.ID, err = s.Add(ctx, task)
+	err = Add(ctx, s, &task)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -168,7 +171,7 @@ func TestCRUDChangesAndStatePersistence(t *testing.T) {
 		t.Fatal(err)
 	}
 	expectChange(true)
-	got, err := s.Get(ctx, task.ID)
+	got, err := Get[model.Task](ctx, s, task.ID)
 	if err != nil || got.LastFired == nil || !got.LastFired.Equal(fired) {
 		t.Fatalf("execution state overwritten: %+v %v", got, err)
 	}
@@ -193,14 +196,14 @@ func TestCRUDChangesAndStatePersistence(t *testing.T) {
 	}
 	expectChange(true)
 	expectChange(false)
-	if err := s.Remove(ctx, task.ID); err != nil {
+	if err := Remove[model.Task](ctx, s, task.ID); err != nil {
 		t.Fatal(err)
 	}
 	expectChange(true)
-	if _, err := s.Get(ctx, task.ID); err == nil {
+	if _, err := Get[model.Task](ctx, s, task.ID); err == nil {
 		t.Fatal("deleted task still exists")
 	}
-	if err := s.Remove(ctx, task.ID); err == nil {
+	if err := Remove[model.Task](ctx, s, task.ID); err == nil {
 		t.Fatal("missing delete accepted")
 	}
 	expectChange(false)

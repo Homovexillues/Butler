@@ -11,8 +11,8 @@ import (
 
 type Task struct {
 	ID                 int64                 `json:"id" gorm:"column:id;primaryKey;autoIncrement"`
-	Title              string                `json:"title" gorm:"column:title;not null"`
-	Body               string                `json:"body" gorm:"column:body;not null"`
+	Title              string                `json:"title" gorm:"column:title;not null;uniqueIndex:idx_task_title_body"`
+	Body               string                `json:"body" gorm:"column:body;not null;uniqueIndex:idx_task_title_body"`
 	ScheduleType       schedule.ScheduleType `json:"scheduleType" gorm:"column:schedule_type;not null"`
 	ScheduleOffset     []string              `json:"scheduleOffset" gorm:"column:schedule_offset;serializer:json"`
 	ScheduleExpression string                `json:"scheduleExpression" gorm:"column:schedule_expression;not null"`

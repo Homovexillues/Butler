@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/user"
 	"path/filepath"
+	"reflect"
 	"runtime"
 	"sync"
 	"time"
@@ -149,9 +150,12 @@ func LoadStoreCallback(ctx context.Context, nodesChannel chan<- []*model.Node, s
 			select {
 			case <-ctx.Done():
 				return
-			case _, ok := <-changes:
+			case t, ok := <-changes:
 				if !ok {
 					return
+				}
+				if t != reflect.TypeFor[model.Task]() {
+					continue
 				}
 			}
 			nodes, err := loadNodes(ctx, s)
@@ -208,7 +212,7 @@ func ensureHome() error {
 }
 
 func loadNodes(ctx context.Context, s *store.Store) ([]*model.Node, error) {
-	tasks, err := s.GetAll(ctx)
+	tasks, err := store.GetAll[model.Task](ctx, s)
 	if err != nil {
 		return nil, err
 	}

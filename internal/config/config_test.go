@@ -1,14 +1,16 @@
 package config
 
 import (
-	"butler/internal/model"
-	"butler/internal/notify"
 	"context"
 	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"butler/internal/model"
+	"butler/internal/notify"
+	"butler/internal/store"
 )
 
 func isolatedConfigRoot(t *testing.T) string {
@@ -22,7 +24,7 @@ func isolatedConfigRoot(t *testing.T) string {
 		t.Fatal(err)
 	}
 	dir = filepath.Join(dir, "butler")
-	if err := os.MkdirAll(dir, 0700); err != nil {
+	if err := os.MkdirAll(dir, 0o700); err != nil {
 		t.Fatal(err)
 	}
 	return dir
@@ -34,7 +36,7 @@ func TestLoadConfigJSONCAndCertificatePath(t *testing.T) {
  "mqtt":{"address":":8883","topic":"test","certfile":"certs/server.crt","keyfile":"certs/server.key"},
  "email":{"host":"smtp.example.test"},
  }`
-	if err := os.WriteFile(filepath.Join(dir, "config.jsonc"), []byte(raw), 0600); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "config.jsonc"), []byte(raw), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	cfg, err := LoadConfig()
@@ -54,7 +56,7 @@ func TestLoadConfigJSONCAndCertificatePath(t *testing.T) {
 func TestLoadConfigRejectsEmptyOrMalformed(t *testing.T) {
 	dir := isolatedConfigRoot(t)
 	for _, raw := range []string{"", "{bad"} {
-		if err := os.WriteFile(filepath.Join(dir, "config.jsonc"), []byte(raw), 0600); err != nil {
+		if err := os.WriteFile(filepath.Join(dir, "config.jsonc"), []byte(raw), 0o600); err != nil {
 			t.Fatal(err)
 		}
 		if _, err := LoadConfig(); err == nil {
@@ -64,14 +66,14 @@ func TestLoadConfigRejectsEmptyOrMalformed(t *testing.T) {
 }
 
 func TestValidateConfig(t *testing.T) {
-	if errs := (Config{}).ValidateConfig(); len(errs) != 0 {
+	if errs := (model.Config{}).ValidateConfig(); len(errs) != 0 {
 		t.Fatal(errs)
 	}
-	valid := Config{Mqtt: MqttSettings{Address: ":8883", Topic: "test"}, Email: EmailSettings{Host: "smtp.example.test", Port: 465, Username: "user", Authcode: "secret", From: "from@example.test", To: []string{"to@example.test"}}}
+	valid := model.Config{Mqtt: model.MqttSetting{Address: ":8883", Topic: "test"}, Email: model.EmailSetting{Host: "smtp.example.test", Port: 465, Username: "user", Authcode: "secret", From: "from@example.test", To: []string{"to@example.test"}}}
 	if errs := valid.ValidateConfig(); len(errs) != 0 {
 		t.Fatal(errs)
 	}
-	errs := (Config{Mqtt: MqttSettings{Username: "user"}, Email: EmailSettings{Host: "smtp.example.test"}}).ValidateConfig()
+	errs := (model.Config{Mqtt: model.MqttSetting{Username: "user"}, Email: model.EmailSetting{Host: "smtp.example.test"}}).ValidateConfig()
 	for _, prefix := range []string{"mqtt:", "email:"} {
 		found := false
 		for _, err := range errs {
@@ -91,7 +93,8 @@ func TestLoadDatabasePersistsAcrossReopen(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	id, err := s.Add(context.Background(), model.Task{Title: "persisted", Channels: []notify.Channel{notify.ChannelSystem}, ActionExpression: json.RawMessage(`{}`)})
+	want := model.Task{Title: "persisted", Channels: []notify.Channel{notify.ChannelSystem}, ActionExpression: json.RawMessage(`{}`)}
+	err = store.Add(context.Background(), s, &want)
 	if err != nil {
 		if closeErr := s.Close(); closeErr != nil {
 			t.Errorf("close database after failed insert: %v", closeErr)
@@ -110,7 +113,7 @@ func TestLoadDatabasePersistsAcrossReopen(t *testing.T) {
 			t.Errorf("close database: %v", err)
 		}
 	})
-	task, err := s.Get(context.Background(), id)
+	task, err := store.Get[model.Task](context.Background(), s, want.ID)
 	if err != nil || task.Title != "persisted" {
 		t.Fatalf("got %+v, %v", task, err)
 	}

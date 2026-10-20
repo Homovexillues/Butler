@@ -11,6 +11,7 @@ import (
 	"butler/internal/config"
 	"butler/internal/model"
 	"butler/internal/parser"
+	"butler/internal/store"
 
 	"github.com/spf13/cobra"
 	"golang.org/x/text/width"
@@ -26,7 +27,7 @@ var treeCmd = &cobra.Command{
 			return fmt.Errorf("load database: %w", err)
 		}
 		defer s.Close()
-		tasks, err := s.GetAll(cmd.Context())
+		tasks, err := store.GetAll[model.Task](cmd.Context(), s)
 		if err != nil {
 			return fmt.Errorf("load tasks: %w", err)
 		}

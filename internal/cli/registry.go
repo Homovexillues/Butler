@@ -3,11 +3,11 @@ package cli
 import (
 	"log/slog"
 
-	"butler/internal/config"
+	"butler/internal/model"
 	"butler/internal/notify"
 )
 
-func buildRegistry(config config.Config) *notify.Registry {
+func buildRegistry(config model.Config) *notify.Registry {
 	registry := notify.NewRegistry()
 	register := func(n notify.Notifier) {
 		if err := registry.Register(n); err != nil {

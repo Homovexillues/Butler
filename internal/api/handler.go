@@ -16,7 +16,7 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-func addTaskHandler(store *store.Store) gin.HandlerFunc {
+func addTaskHandler(s *store.Store) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		var task model.Task
 		if err := c.ShouldBindBodyWithJSON(&task); err != nil {
@@ -29,18 +29,18 @@ func addTaskHandler(store *store.Store) gin.HandlerFunc {
 			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 			return
 		}
-		id, err := store.Add(c.Request.Context(), task)
+		err := store.Add(c.Request.Context(), s, &task)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{
 				"error": err.Error(),
 			})
 			return
 		}
-		c.JSON(http.StatusOK, gin.H{"id": id})
+		c.JSON(http.StatusOK, gin.H{"id": task.ID})
 	}
 }
 
-func deleteTaskHandler(store *store.Store) gin.HandlerFunc {
+func deleteTaskHandler(s *store.Store) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		var req struct {
 			ID int64 `json:"id"`
@@ -51,7 +51,7 @@ func deleteTaskHandler(store *store.Store) gin.HandlerFunc {
 			})
 			return
 		}
-		if err := store.Remove(c.Request.Context(), req.ID); err != nil {
+		if err := store.Remove[model.Task](c.Request.Context(), s, req.ID); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{
 				"error": err.Error(),
 			})
@@ -61,9 +61,9 @@ func deleteTaskHandler(store *store.Store) gin.HandlerFunc {
 	}
 }
 
-func listTaskHandler(store *store.Store) gin.HandlerFunc {
+func listTaskHandler(s *store.Store) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		taskRows, err := store.GetAll(c.Request.Context())
+		taskRows, err := store.GetAll[model.Task](c.Request.Context(), s)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
@@ -114,7 +114,7 @@ func updateTaskHandler(store *store.Store) gin.HandlerFunc {
 	}
 }
 
-func getTaskHandler(store *store.Store) gin.HandlerFunc {
+func getTaskHandler(s *store.Store) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		var req struct {
 			ID int64 `json:"id"`
@@ -125,7 +125,7 @@ func getTaskHandler(store *store.Store) gin.HandlerFunc {
 			})
 			return
 		}
-		task, err := store.Get(c.Request.Context(), req.ID)
+		task, err := store.Get[model.Task](c.Request.Context(), s, req.ID)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{
 				"error": err.Error(),
@@ -148,9 +148,9 @@ func getActionsHandler() gin.HandlerFunc {
 	}
 }
 
-func outputTasksHandler(store *store.Store) gin.HandlerFunc {
+func outputTasksHandler(s *store.Store) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		tasks, err := store.GetAll(c.Request.Context())
+		tasks, err := store.GetAll[model.Task](c.Request.Context(), s)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
@@ -165,7 +165,7 @@ func outputTasksHandler(store *store.Store) gin.HandlerFunc {
 	}
 }
 
-func loadTasksHandler(store *store.Store) gin.HandlerFunc {
+func loadTasksHandler(s *store.Store) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, 5<<20)
 		header, err := c.FormFile("file")
@@ -195,7 +195,7 @@ func loadTasksHandler(store *store.Store) gin.HandlerFunc {
 				c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 				return
 			}
-			if _, err := store.Add(c.Request.Context(), task); err != nil {
+			if err := store.Add(c.Request.Context(), s, &task); err != nil {
 				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 				return
 			}
