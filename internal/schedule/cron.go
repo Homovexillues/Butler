@@ -19,7 +19,7 @@ func NewCronSchedule(spec string) (Cron, error) {
 }
 
 func (cronSchedule Cron) NextAfter(since time.Time) (time.Time, bool) {
-	next := cronSchedule.inner.Next(since)
+	next := cronSchedule.inner.Next(since.In(time.Local))
 	if next.IsZero() {
 		return time.Time{}, false
 	}

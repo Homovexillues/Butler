@@ -103,7 +103,7 @@ func Run(ctx context.Context, nodesChannel <-chan []*model.Node, requests chan<-
 			delete(running, result.Node.ID)
 			if result.Err != nil {
 				slog.Error("action failed", "action", result.Node.Title, "error", result.Err)
-				request.Message.Body += fmt.Sprintf("\n=action failed=\n %s %v", result.Result.Output, result.Err)
+				request.Message.Body += fmt.Sprintf("\n=action failed=\n%s %v", result.Result.Output, result.Err)
 			} else if result.Node.Action != nil {
 				slog.Info("action succeed", "title", result.Node.Title)
 				request.Message.Body += fmt.Sprintf("\n=action succeed=\n %s", result.Result.Output)
