@@ -11,4 +11,5 @@ type Message struct {
 type Notifier interface {
 	Name() string
 	Send(ctx context.Context, message Message) error
+	Close() error
 }

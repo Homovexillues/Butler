@@ -34,6 +34,8 @@ func (m *mockNotifier) callCount() int {
 	return m.calls
 }
 
+func (m *mockNotifier) Close() error { return nil }
+
 // ---- Registry ----
 
 func TestRegistry_RegisterAndGet(t *testing.T) {

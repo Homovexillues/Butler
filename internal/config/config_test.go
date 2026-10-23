@@ -49,10 +49,10 @@ func TestLoadConfigEmptyAndPersisted(t *testing.T) {
 	}
 	mqtt := notify.MqttSetting{ID: DefaultSettingID, Address: "127.0.0.1:1883", Topic: "test", Username: "user", Password: "secret", SkipVerify: true}
 	email := notify.EmailNotifier{ID: DefaultSettingID, Host: "smtp.example.test", Port: 465, Username: "user", Authcode: "secret", From: "from@example.test", To: []string{"to@example.test"}}
-	if err := store.SaveSetting(ctx, s, &mqtt); err != nil {
+	if err := store.Upsert(ctx, s, &mqtt); err != nil {
 		t.Fatal(err)
 	}
-	if err := store.SaveSetting(ctx, s, &email); err != nil {
+	if err := store.Upsert(ctx, s, &email); err != nil {
 		t.Fatal(err)
 	}
 	// SQLite retains the instant and offset, not Go's location/monotonic metadata.

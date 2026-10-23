@@ -25,6 +25,10 @@ func (sys SystemNotifier) Send(ctx context.Context, message Message) error {
 	return nil
 }
 
+func (sys SystemNotifier) Close() error {
+	return nil
+}
+
 func init() {
 	beeep.AppName = "Butler"
 }

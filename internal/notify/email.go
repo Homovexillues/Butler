@@ -75,3 +75,7 @@ func (email EmailNotifier) Send(ctx context.Context, message Message) error {
 	}
 	return client.DialAndSendWithContext(ctx, msg)
 }
+
+func (email EmailNotifier) Close() error {
+	return nil
+}

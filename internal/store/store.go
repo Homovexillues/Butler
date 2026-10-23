@@ -115,9 +115,9 @@ func GetAll[T any](ctx context.Context, store *Store) ([]T, error) {
 	return gorm.G[T](store.db).Find(ctx)
 }
 
-// SaveSetting replaces a singleton setting, including zero-valued fields.
+// Upsert replaces a singleton setting, including zero-valued fields.
 // Settings take effect on restart and do not notify the task scheduler.
-func SaveSetting[T any](ctx context.Context, store *Store, value *T) error {
+func Upsert[T any](ctx context.Context, store *Store, value *T) error {
 	return store.db.WithContext(ctx).Clauses(clause.OnConflict{UpdateAll: true}).Create(value).Error
 }
 

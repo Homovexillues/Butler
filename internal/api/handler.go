@@ -279,7 +279,7 @@ func configMqttHandler(s *store.Store) gin.HandlerFunc {
 			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 			return
 		}
-		if err := store.SaveSetting(c.Request.Context(), s, &value); err != nil {
+		if err := store.Upsert(c.Request.Context(), s, &value); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
 		}
@@ -343,7 +343,7 @@ func configEmailHandler(s *store.Store) gin.HandlerFunc {
 			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 			return
 		}
-		if err := store.SaveSetting(c.Request.Context(), s, &value); err != nil {
+		if err := store.Upsert(c.Request.Context(), s, &value); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
 		}
