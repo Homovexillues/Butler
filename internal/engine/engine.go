@@ -11,45 +11,74 @@ import (
 	"butler/internal/notify"
 )
 
-func Next(nodes []*model.Node, running map[int64]bool, now time.Time) (index int, at time.Time, found bool) {
-	index = -1
-	for i, node := range nodes {
-		if node == nil || node.Schedule == nil || running[node.ID] {
+func Since(lastAttempt, lastFired, now time.Time) time.Time {
+	if then := later(lastAttempt, lastFired); !then.IsZero() {
+		return then
+	}
+	return now
+}
+
+func later(a, b time.Time) time.Time {
+	if a.Before(b) {
+		return b
+	}
+	return a
+}
+
+func mergeNodes(old map[int64]*model.Node, newNodes []*model.Node, anchor time.Time) map[int64]*model.Node {
+	next := make(map[int64]*model.Node, len(newNodes))
+	for _, newNode := range newNodes {
+		if newNode == nil {
+			continue
+		}
+		node := *newNode
+		if oldNode, ok := old[node.ID]; ok {
+			node.LastAttempt = later(node.LastAttempt, oldNode.LastAttempt)
+			node.LastFired = later(node.LastFired, oldNode.LastFired)
+		}
+		node.LastAttempt = later(node.LastAttempt, node.LastFired)
+		if node.LastAttempt.IsZero() {
+			node.LastAttempt = anchor
+		}
+		next[node.ID] = &node
+	}
+	return next
+}
+
+func Next(nodes map[int64]*model.Node, running map[int64]bool, now time.Time) (result *model.Node, at time.Time, found bool) {
+	for id, node := range nodes {
+		if node == nil || node.Schedule == nil || running[id] {
 			continue
 		}
 		// 	有执行记录的时候，从上次执行时间寻找下一次触发
 		// 	没有的时候从调用方提供的时间寻找下一次触发
-		since := now
-		if node.LastFired != nil && !node.LastFired.IsZero() {
-			since = *node.LastFired
-		}
-
+		since := Since(node.LastAttempt, node.LastFired, now)
 		next, ok := node.Schedule.NextAfter(since)
 		if !ok {
 			continue
 		}
 
 		if !found || next.Before(at) {
-			index = i
+			result = node
 			at = next
 			found = true
 		}
 	}
-	return index, at, found
+	return result, at, found
 }
 
-func Run(ctx context.Context, nodesChannel <-chan []*model.Node, requests chan<- notify.Request, saveState func(id int64, lastFired time.Time) error) {
-	nodes := []*model.Node{}
+func Run(ctx context.Context, nodesChannel <-chan []*model.Node, requests chan<- notify.Request, saveState func(id int64, lastAttempt *time.Time, lastFired *time.Time) error) {
+	nodes := map[int64]*model.Node{}
 	results := make(chan actionResult, 10)
 	running := make(map[int64]bool)
 	for {
 		now := time.Now()
-		index, soonest, found := Next(nodes, running, now)
+		nodeResult, soonest, found := Next(nodes, running, now)
 		var timer *time.Timer
 		var timeChannel <-chan time.Time
 		var target *model.Node
 		if found {
-			target = nodes[index]
+			target = nodeResult
 			timer = time.NewTimer(max(time.Duration(0), soonest.Sub(now)))
 			timeChannel = timer.C
 		}
@@ -60,30 +89,8 @@ func Run(ctx context.Context, nodesChannel <-chan []*model.Node, requests chan<-
 				nodesChannel = nil
 				break
 			}
-			// 在更新节点的时候保持已经开始执行过的任务的目标节点
-			// 因为之前是直接加载配置文件来修改节点的，但是现在要热重载，所以要保留状态
-			anchor := time.Now()
-			nextNodes := make([]*model.Node, 0, len(nodes))
-			for _, newNode := range newNodes {
-				if newNode == nil {
-					continue
-				}
-				node := *newNode
-				fired := anchor
-				if newNode.LastFired != nil && !newNode.LastFired.IsZero() {
-					fired = *newNode.LastFired
-				} else {
-					for _, old := range nodes {
-						if old.ID == node.ID && old.LastFired != nil {
-							fired = *old.LastFired
-							break
-						}
-					}
-				}
-				node.LastFired = &fired
-				nextNodes = append(nextNodes, &node)
-			}
-			nodes = nextNodes
+			// 更新配置时合并执行状态：数据库读到的是旧值也不能让内存状态回退。
+			nodes = mergeNodes(nodes, newNodes, time.Now())
 		case <-timeChannel:
 			if !time.Now().Before(soonest) {
 				running[target.ID] = true
@@ -92,6 +99,11 @@ func Run(ctx context.Context, nodesChannel <-chan []*model.Node, requests chan<-
 		case result := <-results:
 			if timer != nil {
 				timer.Stop()
+			}
+			attempt := result.FinishedAt
+			var fired *time.Time
+			if result.Err == nil {
+				fired = &attempt
 			}
 			request := notify.Request{
 				Channels: result.Node.Channels,
@@ -113,19 +125,15 @@ func Run(ctx context.Context, nodesChannel <-chan []*model.Node, requests chan<-
 			case <-ctx.Done():
 				return
 			}
-			if result.Err != nil {
-				continue
-			}
-
-			fired := result.FinishedAt
-			for _, node := range nodes {
-				if node.ID == result.Node.ID {
-					node.LastFired = &fired
-					break
+			// The snapshot may have been replaced while the action was running;
+			// update the node that is current now, not the pointer we started with.
+			if node, ok := nodes[result.Node.ID]; ok {
+				node.LastAttempt = attempt
+				if fired != nil {
+					node.LastFired = attempt
 				}
 			}
-
-			if err := saveState(result.Node.ID, fired); err != nil {
+			if err := saveState(result.Node.ID, &attempt, fired); err != nil {
 				slog.ErrorContext(ctx, "fail to save state", "error", err)
 			}
 		case <-ctx.Done():

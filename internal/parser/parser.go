@@ -124,15 +124,23 @@ func TaskToNode(task model.Task) (model.Node, error) {
 		return model.Node{}, err
 	}
 	node := model.Node{
-		ID:        task.ID,
-		Title:     task.Title,
-		Body:      task.Body,
-		Schedule:  taskSchedule,
-		Action:    taskAction,
-		Channels:  task.Channels,
-		LastFired: task.LastFired,
+		ID:          task.ID,
+		Title:       task.Title,
+		Body:        task.Body,
+		Schedule:    taskSchedule,
+		Action:      taskAction,
+		Channels:    task.Channels,
+		LastAttempt: timeValue(task.LastAttempt),
+		LastFired:   timeValue(task.LastFired),
 	}
 	return node, nil
+}
+
+func timeValue(t *time.Time) time.Time {
+	if t == nil {
+		return time.Time{}
+	}
+	return *t
 }
 
 func toOffsetSchedule(s schedule.Schedule, notifyOffsets []string) (schedule.Schedule, error) {

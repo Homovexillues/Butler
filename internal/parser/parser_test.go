@@ -117,13 +117,15 @@ func validTask() model.Task {
 
 func TestTaskToNodeAndValidation(t *testing.T) {
 	task := validTask()
+	attempt := time.Date(2026, 1, 1, 7, 0, 0, 0, time.UTC)
 	fired := time.Date(2026, 1, 1, 8, 0, 0, 0, time.UTC)
+	task.LastAttempt = &attempt
 	task.LastFired = &fired
 	node, err := TaskToNode(task)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if node.ID != task.ID || node.Title != task.Title || node.Body != task.Body || node.Action != nil || node.Schedule == nil || node.LastFired == nil || !node.LastFired.Equal(fired) || len(node.Channels) != 1 {
+	if node.ID != task.ID || node.Title != task.Title || node.Body != task.Body || node.Action != nil || node.Schedule == nil || !node.LastAttempt.Equal(attempt) || !node.LastFired.Equal(fired) || len(node.Channels) != 1 {
 		t.Fatalf("node=%+v", node)
 	}
 	if err := ValidateTask(task); err != nil {

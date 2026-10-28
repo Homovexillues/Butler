@@ -82,8 +82,8 @@ func (p *program) Start(s service.Service) error {
 
 	LoadStoreCallback(ctx, nodesChannel, store)
 
-	go engine.Run(ctx, nodesChannel, requests, func(id int64, lastFired time.Time) error {
-		return store.MarkLastFired(ctx, id, lastFired)
+	go engine.Run(ctx, nodesChannel, requests, func(id int64, lastAttempt *time.Time, lastFired *time.Time) error {
+		return store.SaveRunState(ctx, id, lastAttempt, lastFired)
 	})
 	return nil
 }

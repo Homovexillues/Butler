@@ -19,6 +19,7 @@ type Task struct {
 	ActionType         action.ActionType     `json:"actionType" gorm:"column:action_type;not null"`
 	ActionExpression   json.RawMessage       `json:"actionExpression" gorm:"column:action_expression;serializer:json;not null"`
 	Channels           []notify.Channel      `json:"channel" gorm:"column:channel;serializer:json"`
+	LastAttempt        *time.Time            `json:"lastAttempt" gorm:"column:last_attempt"`
 	LastFired          *time.Time            `json:"lastFired" gorm:"column:last_fired"`
 	Enabled            bool                  `json:"enabled" gorm:"column:enabled"`
 }

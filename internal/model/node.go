@@ -10,11 +10,12 @@ import (
 )
 
 type Node struct {
-	ID        int64
-	Title     string
-	Body      string
-	Schedule  schedule.Schedule
-	Channels  []notify.Channel
-	Action    action.Action
-	LastFired *time.Time
+	ID          int64
+	Title       string
+	Body        string
+	Schedule    schedule.Schedule
+	Channels    []notify.Channel
+	Action      action.Action
+	LastAttempt time.Time
+	LastFired   time.Time
 }

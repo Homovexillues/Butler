@@ -61,7 +61,7 @@ func TestLegacyDatabaseCompatibility(t *testing.T) {
 	}
 	task.Body = ""
 	task.Enabled = false
-	if err := s.Update(ctx, task); err != nil {
+	if err := s.UpdateTask(ctx, task); err != nil {
 		t.Fatal(err)
 	}
 	got, err := Get[model.Task](ctx, s, 1)
@@ -120,7 +120,7 @@ func TestTaskRoundTrip(t *testing.T) {
 	want.ActionExpression = json.RawMessage(`{"channels":["email"]}`)
 	want.Channels = []notify.Channel{notify.ChannelEmail}
 	want.Enabled = false
-	if err := s.Update(ctx, want); err != nil {
+	if err := s.UpdateTask(ctx, want); err != nil {
 		t.Fatal(err)
 	}
 	check()
@@ -161,25 +161,26 @@ func TestCRUDChangesAndStatePersistence(t *testing.T) {
 	}
 	expectChange(true)
 	fired := time.Date(2026, 10, 15, 9, 0, 0, 123456000, time.UTC)
-	if err := s.MarkLastFired(ctx, task.ID, fired); err != nil {
+	if err := s.SaveRunState(ctx, task.ID, &fired, &fired); err != nil {
 		t.Fatal(err)
 	}
 	expectChange(false)
 	task.Title = "updated"
 	task.LastFired = nil
-	if err := s.Update(ctx, task); err != nil {
+	if err := s.UpdateTask(ctx, task); err != nil {
 		t.Fatal(err)
 	}
 	expectChange(true)
 	got, err := Get[model.Task](ctx, s, task.ID)
-	if err != nil || got.LastFired == nil || !got.LastFired.Equal(fired) {
+	if err != nil || got.LastAttempt == nil || !got.LastAttempt.Equal(fired) ||
+		got.LastFired == nil || !got.LastFired.Equal(fired) {
 		t.Fatalf("execution state overwritten: %+v %v", got, err)
 	}
 	// Multiple writes without a consumer must coalesce instead of blocking.
 	done := make(chan error, 1)
 	go func() {
 		for range 3 {
-			if err := s.Update(ctx, task); err != nil {
+			if err := s.UpdateTask(ctx, task); err != nil {
 				done <- err
 				return
 			}
@@ -207,7 +208,7 @@ func TestCRUDChangesAndStatePersistence(t *testing.T) {
 		t.Fatal("missing delete accepted")
 	}
 	expectChange(false)
-	if err := s.Update(ctx, task); err == nil {
+	if err := s.UpdateTask(ctx, task); err == nil {
 		t.Fatal("missing update accepted")
 	}
 	expectChange(false)

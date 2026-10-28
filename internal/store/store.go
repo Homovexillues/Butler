@@ -85,12 +85,22 @@ func Remove[T any](ctx context.Context, store *Store, id int64) error {
 	return nil
 }
 
-func (store *Store) MarkLastFired(ctx context.Context, id int64, at time.Time) error {
+func (store *Store) SaveRunState(ctx context.Context, id int64, attempt *time.Time, fired *time.Time) error {
+	updates := map[string]any{}
+	if attempt == nil && fired == nil {
+		return nil
+	}
+	if attempt != nil {
+		updates["last_attempt"] = attempt.UTC()
+	}
+	if fired != nil {
+		updates["last_fired"] = fired.UTC()
+	}
 	return store.db.WithContext(ctx).Model(&model.Task{}).
-		Where("id = ?", id).Update("last_fired", at.UTC()).Error
+		Where("id = ?", id).Updates(updates).Error
 }
 
-func (store *Store) Update(ctx context.Context, task model.Task) error {
+func (store *Store) UpdateTask(ctx context.Context, task model.Task) error {
 	if len(task.ActionExpression) == 0 {
 		task.ActionExpression = []byte("{}")
 	}

@@ -11,6 +11,7 @@ import (
 
 	"butler/internal/action"
 	"butler/internal/config"
+	"butler/internal/engine"
 	"butler/internal/model"
 	"butler/internal/notify"
 	"butler/internal/parser"
@@ -32,6 +33,8 @@ func addTaskHandler(s *store.Store) gin.HandlerFunc {
 			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 			return
 		}
+		task.LastAttempt = nil
+		task.LastFired = nil
 		err := store.Add(c.Request.Context(), s, &task)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{
@@ -79,10 +82,7 @@ func listTaskHandler(s *store.Store) gin.HandlerFunc {
 			if err != nil {
 				task.ScheduleError = err.Error()
 			} else if taskRow.Enabled {
-				since := now
-				if taskRow.LastFired != nil {
-					since = *taskRow.LastFired
-				}
+				since := engine.Since(timeValue(taskRow.LastAttempt), timeValue(taskRow.LastFired), now)
 				if next, ok := taskSchedule.NextAfter(since); ok {
 					task.NextTriggeredAt = &next
 				}
@@ -91,6 +91,13 @@ func listTaskHandler(s *store.Store) gin.HandlerFunc {
 		}
 		c.JSON(http.StatusOK, tasks)
 	}
+}
+
+func timeValue(t *time.Time) time.Time {
+	if t == nil {
+		return time.Time{}
+	}
+	return *t
 }
 
 func updateTaskHandler(store *store.Store) gin.HandlerFunc {
@@ -106,7 +113,7 @@ func updateTaskHandler(store *store.Store) gin.HandlerFunc {
 			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 			return
 		}
-		err := store.Update(c.Request.Context(), task)
+		err := store.UpdateTask(c.Request.Context(), task)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{
 				"error": err.Error(),
@@ -198,6 +205,8 @@ func loadTasksHandler(s *store.Store) gin.HandlerFunc {
 				c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 				return
 			}
+			task.LastAttempt = nil
+			task.LastFired = nil
 			if err := store.Add(c.Request.Context(), s, &task); err != nil {
 				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 				return
