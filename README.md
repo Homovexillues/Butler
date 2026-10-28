@@ -43,7 +43,7 @@ Windows 可使用 `CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -tags nomsgp
 
 | 文件 | 用途 |
 |---|---|
-| `butler.db` | SQLite 任务、MQTT/Email 配置、用户与 `LastFired` 执行状态 |
+| `butler.db` | SQLite 任务、MQTT/Email 配置、用户与 `LastAttempt`/`LastFired` 执行状态 |
 | `butler.db-wal` / `butler.db-shm` | SQLite WAL 模式运行时可能产生的辅助文件 |
 | `logs/YYYY-MM-DD.log` | `serve` 的 JSON 日志，当前保留 7 天 |
 
@@ -124,13 +124,14 @@ Task 是平面任务，不再区分父分组和叶子节点，也没有渠道继
 | `actionExpression` | 动作 JSON 对象；普通提醒填写 `{}`，不要传空字符串 |
 | `channel` | 渠道数组，例如 `["system", "mqtt"]`；注意 Task 的字段名是单数 `channel` |
 | `enabled` | 是否启用；省略时为 false |
-| `lastFired` | 上次成功执行完成的时间，通常由服务维护，创建时省略 |
+| `lastAttempt` | 上次尝试完成的时间（成功或失败），由服务维护，创建时省略 |
+| `lastFired` | 上次成功执行完成的时间；由服务维护，创建时省略。它表示动作成功并已进入通知队列，不代表通知已送达 |
 
 ### 调度表达式
 
 | 类型 | 示例 | 说明 |
 |---|---|---|
-| `once` | `2030-06-01 09:00:00` | 当前使用 `time.Parse`，按 UTC 解析 |
+| `once` | `2030-06-01 09:00:00` | 当前使用 `time.Parse`，按 UTC 解析，与其它调度的本地时区不同 |
 | `solar` | `06-01 09:00:00` | 每年公历月日，触发时间使用本地时区 |
 | `lunar` | `01-01 09:00:00` | 每年农历月日，换算后的触发时间使用本地时区 |
 | `cron` | `0 9 * * 1-5` | 五字段：分、时、日、月、星期；不包含秒 |
@@ -208,11 +209,11 @@ curl -sS http://127.0.0.1:8191/api/v1/get \
 curl -sS http://127.0.0.1:8191/api/v1/tasks
 ```
 
-修改时先获取完整 Task，更改需要的字段，再连同 ID 提交到 `/update`。当前更新不是 PATCH，省略字段可能将其清空或重置。`LastFired` 不属于普通配置更新字段。
+修改时先获取完整 Task，更改需要的字段，再连同 ID 提交到 `/update`。当前更新不是 PATCH，省略字段可能将其清空或重置。`LastAttempt` 和 `LastFired` 由服务维护：创建/导入时会重置，更新时会被忽略。
 
 服务进程内经 CRUD 成功写入的变更会通知 engine 重新加载任务；直接用其他进程修改 SQLite 不会触发这个内存通道。MQTT/Email 设置不会热更新，保存后需手动重启服务；前台运行时停止后重新运行 `serve`。应用不提供服务重启接口。
 
-`/tasks` 返回完整 Task 字段及 `nextTriggeredAt`，并保留复数 `channels` 供列表客户端使用；提交 Task 仍使用单数 `channel`。停用或无后续触发时间时，`nextTriggeredAt` 为 `null`；调度配置解析失败时，该任务携带 `scheduleError`，不影响其他任务显示。
+`/tasks` 返回完整 Task 字段（包括 `lastAttempt`/`lastFired`）及 `nextTriggeredAt`，并保留复数 `channels` 供列表客户端使用；提交 Task 仍使用单数 `channel`。停用或无后续触发时间时，`nextTriggeredAt` 为 `null`；调度配置解析失败时，该任务携带 `scheduleError`，不影响其他任务显示。
 
 ## CLI
 
@@ -264,16 +265,19 @@ Windows 使用系统服务 API，默认不询问 Linux 运行用户；指定普�
 ## 调度与通知语义
 
 - engine 按任务 ID 跟踪运行状态，同一个任务正在执行时不会再次启动它。
-- 从未执行过的任务以加载时刻作为内存起算时间；这个起点尚未持久化，首次执行前重启可能重置间隔等待。
-- 已有 `LastFired` 的任务从该时间寻找下一次；若计划时间已过，会立即尝试执行。成功后记录完成时间，因此 Interval 表示“成功完成后再等一个间隔”。
-- 命令失败不推进 `LastFired`，当前没有重试退避，可能快速重复执行并发送错误通知。
-- 动作完成后将消息投递到通知队列，任务状态与通知送达状态不同；通知失败不会自动重新执行已成功的命令，通知队列也没有持久化。
+- 从未执行过的任务以加载时刻作为内存锚点；这个锚点尚未持久化，首次执行前重启可能重置 interval 的等待。
+- 调度基准取 `LastAttempt` 和 `LastFired` 中较晚的那个；两者都为空时使用当前时间。`LastAttempt` 是主基准，`LastFired` 只在旧数据或没有 attempt 时兜底。
+- 动作成功时，`LastAttempt` 和 `LastFired` 都更新为动作完成时间；动作失败时只推进 `LastAttempt`，保留上次成功的 `LastFired`。
+- 因此失败不会仅因为 `LastFired` 未变而立即重试：`interval` 从本次尝试完成后再等一个间隔，`cron` 等下一个触发点。当前没有额外的失败重试/退避策略；`once` 失败后不会重试，`solar`/`lunar` 失败后要等到下一次年度触发。
+- 若按 `LastAttempt` 算出的下一次触发已经过去（例如服务停过一段时间），仍会立即补执行一次。
+- 热重载会采用新配置，但执行状态不会回退：新旧 `LastAttempt`/`LastFired` 取较晚值；只有 `LastFired` 的旧数据会把它作为 `LastAttempt` 兜底。
+- 动作完成并将消息放入通知队列后，成功结果才会更新 `LastFired`（正常入队路径）。它表示“动作成功且已入队”，不代表通知已经送达；通知失败不会自动重新执行已成功的命令，通知队列也没有持久化。
 - 指定渠道并发发送；失败报告可能走其他渠道。整体广播成功只代表至少一个渠道发送成功，可能是备用失败报告成功，而非原渠道成功。
 - `tree` 是基于当前时间的计划预览，不是 engine 内存状态查询。已有历史的 Interval 预览时间可能与 engine 实际安排不同。
 
 ## 当前限制
 
-- 管理页面的下次触发时间由任务配置和上次执行时间计算；从未执行的间隔任务以查询时刻估算，不是 engine 运行状态的实时快照。
+- 管理页面的下次触发时间由任务配置和库中的 `LastAttempt`/`LastFired` 计算；从未执行的 interval 任务以查询时刻估算，运行中的任务和 engine 内存锚点不在查询范围内，因此不是实时快照。
 - 调度、动作、偏移校验尚不覆盖全部业务错误；`validate` 通过不代表外部命令存在、证书可用或通知已送达。
 - 农历表达式当前借用公历月日解析，部分合法农历日期尚不能正确表达。
 - 通知渠道阻塞可能耗尽 worker，并在队列满时拖慢调度；退出时的后台任务等待和资源清理仍需完善。

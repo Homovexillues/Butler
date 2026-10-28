@@ -1,6 +1,9 @@
 package notify
 
-import "fmt"
+import (
+	"errors"
+	"fmt"
+)
 
 type Registry struct {
 	channels map[Channel]Notifier
@@ -28,4 +31,12 @@ func (registry *Registry) Register(notifier Notifier) error {
 func (registry *Registry) Get(name Channel) (Notifier, bool) {
 	notifier, ok := registry.channels[name]
 	return notifier, ok
+}
+
+func (registry *Registry) Close() (errs error) {
+	for _, v := range registry.channels {
+		err := v.Close()
+		errs = errors.Join(errs, err)
+	}
+	return errs
 }

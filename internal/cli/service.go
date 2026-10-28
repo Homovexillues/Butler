@@ -7,6 +7,7 @@ import (
 	"io"
 	"log"
 	"log/slog"
+	"net"
 	"net/http"
 	"os"
 	"os/user"
@@ -29,10 +30,11 @@ import (
 )
 
 type program struct {
-	cancel   context.CancelFunc
-	server   *http.Server
-	closeDB  func() error
-	closeLog func() error
+	cancel       context.CancelFunc
+	server       *http.Server
+	closeDB      func() error
+	closeChannel func() error
+	closeLog     func() error
 }
 
 var svc service.Service
@@ -62,7 +64,7 @@ func (p *program) Start(s service.Service) error {
 	}
 
 	registry := buildRegistry(cfg)
-
+	p.closeChannel = registry.Close
 	requests := make(chan notify.Request, 10)
 
 	initNodes, err := loadNodes(ctx, store)
@@ -76,9 +78,11 @@ func (p *program) Start(s service.Service) error {
 
 	p.cancel = cancel
 
-	LoadMessageLoop(ctx, registry, requests, 4)
+	if err = LoadHTTPServer(p, store, configLoadedAt); err != nil {
+		return err
+	}
 
-	LoadHTTPServer(p, store, configLoadedAt)
+	LoadMessageLoop(ctx, registry, requests, 4)
 
 	LoadStoreCallback(ctx, nodesChannel, store)
 
@@ -100,14 +104,18 @@ func PrintMem() {
 	fmt.Printf("NumGC: %d 【已经执行GC次数】\n\n", ms.NumGC)
 }
 
-func LoadHTTPServer(p *program, s *store.Store, configLoadedAt time.Time) {
+func LoadHTTPServer(p *program, s *store.Store, configLoadedAt time.Time) (err error) {
+	ln, err := net.Listen("tcp", ":8191")
+	if err != nil {
+		err = fmt.Errorf("listen on 8191 : %w", err)
+	}
 	p.server = &http.Server{
 		Addr:              ":8191",
 		Handler:           api.NewRouter(s, configLoadedAt),
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 	go func() {
-		err := p.server.ListenAndServe()
+		err := p.server.Serve(ln)
 		switch {
 		case errors.Is(err, http.ErrServerClosed):
 			slog.Info("HTTP server stopped")
@@ -116,6 +124,7 @@ func LoadHTTPServer(p *program, s *store.Store, configLoadedAt time.Time) {
 
 		}
 	}()
+	return err
 }
 
 func LoadMessageLoop(ctx context.Context, registry *notify.Registry, requests <-chan notify.Request, workers int) {
@@ -188,9 +197,15 @@ func (p *program) Stop(s service.Service) error {
 			return err
 		}
 	}
+	if p.closeChannel != nil {
+		if err := p.closeChannel(); err != nil {
+			return err
+		}
+	}
 	if p.closeLog != nil {
 		return p.closeLog()
 	}
+
 	return nil
 }
 

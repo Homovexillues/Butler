@@ -31,6 +31,8 @@ func NewIntervalSchedule(expression string) (Interval, error) {
 			interval.every += time.Duration(num) * time.Minute
 		case strings.HasSuffix(section, "s"):
 			interval.every += time.Duration(num) * time.Second
+		default:
+			return interval, fmt.Errorf("unsupported config character")
 		}
 	}
 	return interval, nil
