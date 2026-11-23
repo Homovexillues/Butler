@@ -8,6 +8,9 @@ import (
 var rootCmd = &cobra.Command{
 	Use:   "butler",
 	Short: "A cyber butler which can scheduled notify",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		return svc.Run()
+	},
 }
 
 func Execute() error {

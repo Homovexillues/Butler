@@ -317,9 +317,8 @@ func newService(userName, executable string) (service.Service, error) {
 		Name:        "butler",
 		DisplayName: "Butler 电子管家 顾霈圭",
 		Description: "定时调度通知服务",
-		Arguments:   []string{"serve"},
 		Executable:  executable,
-		UserName:    userName, // 空字符串时 kardianos 不写 User=
+		UserName:    userName,
 	}
 	return service.New(&program{}, cfg)
 }

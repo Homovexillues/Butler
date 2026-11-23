@@ -100,6 +100,7 @@ func Run(ctx context.Context, nodesChannel <-chan []*model.Node, requests chan<-
 			if timer != nil {
 				timer.Stop()
 			}
+			// todo: 加一个失败重试环节如何？
 			attempt := result.FinishedAt
 			var fired *time.Time
 			if result.Err == nil {
